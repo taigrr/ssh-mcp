@@ -1,0 +1,9 @@
+{
+  "mcp": {
+    "ssh": {
+      "command": "./ssh-mcp",
+      "url": "",
+      "type": "stdio"
+    }
+  }
+}
