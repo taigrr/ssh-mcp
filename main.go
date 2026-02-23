@@ -105,7 +105,7 @@ func (m *SSHManager) Connect(host, user, password string) (string, error) {
 				break
 			}
 			sshSession.mu.Lock()
-			_, err = emulator.Write(buf[:n])
+			_, _ = emulator.Write(buf[:n])
 			sshSession.mu.Unlock()
 		}
 	}()
@@ -276,9 +276,9 @@ func main() {
 	)
 
 	mcpServer.AddTool(connectTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		host, _ := request.Params.Arguments["host"].(string)
-		user, _ := request.Params.Arguments["user"].(string)
-		password, _ := request.Params.Arguments["password"].(string)
+		host, _ := request.GetArguments()["host"].(string)
+		user, _ := request.GetArguments()["user"].(string)
+		password, _ := request.GetArguments()["password"].(string)
 
 		if user == "" {
 			user = os.Getenv("SSH_USER")
@@ -297,7 +297,7 @@ func main() {
 		}
 
 		return &mcp.CallToolResult{
-			Content: []interface{}{
+			Content: []mcp.Content{
 				mcp.NewTextContent(fmt.Sprintf("Connected successfully. Session ID: %s", sessionID)),
 			},
 		}, nil
@@ -310,8 +310,8 @@ func main() {
 	)
 
 	mcpServer.AddTool(sendCommandTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sessionID, _ := request.Params.Arguments["session_id"].(string)
-		command, _ := request.Params.Arguments["command"].(string)
+		sessionID, _ := request.GetArguments()["session_id"].(string)
+		command, _ := request.GetArguments()["command"].(string)
 
 		screen, err := sshManager.SendCommand(sessionID, command)
 		if err != nil {
@@ -319,7 +319,7 @@ func main() {
 		}
 
 		return &mcp.CallToolResult{
-			Content: []interface{}{
+			Content: []mcp.Content{
 				mcp.NewTextContent(screen),
 			},
 		}, nil
@@ -331,7 +331,7 @@ func main() {
 	)
 
 	mcpServer.AddTool(getScreenTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sessionID, _ := request.Params.Arguments["session_id"].(string)
+		sessionID, _ := request.GetArguments()["session_id"].(string)
 
 		screen, err := sshManager.GetScreen(sessionID)
 		if err != nil {
@@ -339,7 +339,7 @@ func main() {
 		}
 
 		return &mcp.CallToolResult{
-			Content: []interface{}{
+			Content: []mcp.Content{
 				mcp.NewTextContent(screen),
 			},
 		}, nil
@@ -360,7 +360,7 @@ func main() {
 		}
 
 		return &mcp.CallToolResult{
-			Content: []interface{}{
+			Content: []mcp.Content{
 				mcp.NewTextContent(text),
 			},
 		}, nil
@@ -372,7 +372,7 @@ func main() {
 	)
 
 	mcpServer.AddTool(closeSessionTool, func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		sessionID, _ := request.Params.Arguments["session_id"].(string)
+		sessionID, _ := request.GetArguments()["session_id"].(string)
 
 		err := sshManager.CloseSession(sessionID)
 		if err != nil {
@@ -380,7 +380,7 @@ func main() {
 		}
 
 		return &mcp.CallToolResult{
-			Content: []interface{}{
+			Content: []mcp.Content{
 				mcp.NewTextContent(fmt.Sprintf("Session %s closed successfully", sessionID)),
 			},
 		}, nil
