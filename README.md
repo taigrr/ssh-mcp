@@ -128,6 +128,6 @@ The server runs as an MCP server using stdio transport:
 
 - `github.com/charmbracelet/x/vt` - Terminal emulator
 - `github.com/charmbracelet/ultraviolet` - Terminal styling
-- `github.com/mark3labs/mcp-go` - MCP protocol implementation
+- `github.com/modelcontextprotocol/go-sdk` - MCP protocol implementation
 - `golang.org/x/crypto/ssh` - SSH client
 - `github.com/joho/godotenv` - Environment file loading
