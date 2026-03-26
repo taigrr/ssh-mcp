@@ -210,7 +210,7 @@ func (m *SSHManager) renderLine(emulator *vt.Emulator, y int) string {
 		}
 
 		if x == 0 || !cell.Style.Equal(&lastStyle) {
-			result += cell.Style.Sequence()
+			result += cell.Style.String()
 			lastStyle = cell.Style
 		}
 
