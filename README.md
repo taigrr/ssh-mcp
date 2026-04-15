@@ -8,6 +8,7 @@ An MCP (Model Control Protocol) server that provides SSH connectivity with persi
 - **Terminal Emulation**: Full VT100 terminal emulation using Charm's VT library
 - **Screen Content Capture**: Get the current terminal screen content as text
 - **Multiple Sessions**: Support for multiple concurrent SSH sessions
+- **SSH Key Authentication**: Supports key-based auth (ed25519, RSA) with automatic key discovery
 - **Environment Configuration**: Load SSH credentials from `.env` file
 
 ## Installation
@@ -23,9 +24,10 @@ Create a `.env` file in the same directory as the executable:
 ```bash
 SSH_USER=your_username
 SSH_PASSWORD=your_password
+SSH_KEY_PATH=/path/to/private/key  # Optional, defaults to ~/.ssh/id_ed25519 or ~/.ssh/id_rsa
 ```
 
-You can also provide credentials directly when connecting.
+You can also provide credentials directly when connecting. Key-based authentication is tried first if a key is available, with password as fallback.
 
 ## Available Tools
 
@@ -36,6 +38,7 @@ Connect to an SSH server and establish a persistent session.
 - `host` (required): SSH host (e.g., "user@hostname:port" or "hostname:port")
 - `user` (optional): SSH username (if not in host or .env)
 - `password` (optional): SSH password (if not from .env)
+- `key_path` (optional): Path to SSH private key file (defaults to `~/.ssh/id_ed25519` or `~/.ssh/id_rsa`)
 
 **Returns:** Session ID for use with other commands
 
@@ -121,7 +124,9 @@ The server runs as an MCP server using stdio transport:
 ## Security Notes
 
 - SSH connections use `InsecureIgnoreHostKey()` for simplicity - not recommended for production
+- Key-based authentication is preferred over password authentication
 - Credentials can be stored in `.env` file - ensure proper file permissions
+- Private key files should have `600` permissions
 - Sessions remain active until explicitly closed or connection is lost
 
 ## Dependencies
