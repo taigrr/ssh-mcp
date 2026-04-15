@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -63,7 +65,7 @@ func TestGetScreenSessionNotFound(t *testing.T) {
 
 func TestConnectInvalidHost(t *testing.T) {
 	mgr := NewSSHManager()
-	_, err := mgr.Connect("invalid-host-that-does-not-exist:22", "user", "pass")
+	_, err := mgr.Connect("invalid-host-that-does-not-exist:22", "user", "pass", "")
 	if err == nil {
 		t.Fatal("expected error connecting to invalid host")
 	}
@@ -272,6 +274,43 @@ func TestRenderScreenSpecialCharacters(t *testing.T) {
 	screen := mgr.renderScreen(emulator)
 	if !strings.Contains(screen, "$PATH=/usr/bin:/usr/local/bin") {
 		t.Fatalf("screen should contain path string, got:\n%s", screen)
+	}
+}
+
+func TestLoadPrivateKeyNonexistentPath(t *testing.T) {
+	_, err := loadPrivateKey("/nonexistent/path/to/key")
+	if err == nil {
+		t.Fatal("expected error for nonexistent key path")
+	}
+	if !strings.Contains(err.Error(), "failed to read key file") {
+		t.Fatalf("expected 'failed to read key file' error, got: %v", err)
+	}
+}
+
+func TestLoadPrivateKeyInvalidContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "bad_key")
+	if err := os.WriteFile(keyPath, []byte("not a real key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadPrivateKey(keyPath)
+	if err == nil {
+		t.Fatal("expected error for invalid key content")
+	}
+	if !strings.Contains(err.Error(), "failed to parse key file") {
+		t.Fatalf("expected 'failed to parse key file' error, got: %v", err)
+	}
+}
+
+func TestConnectNoAuthMethods(t *testing.T) {
+	mgr := NewSSHManager()
+	_, err := mgr.Connect("localhost:22", "user", "", "/nonexistent/key")
+	if err == nil {
+		t.Fatal("expected error with no auth methods")
+	}
+	if !strings.Contains(err.Error(), "no authentication methods available") {
+		t.Fatalf("expected 'no authentication methods' error, got: %v", err)
 	}
 }
 

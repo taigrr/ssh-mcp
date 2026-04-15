@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -37,12 +38,51 @@ func NewSSHManager() *SSHManager {
 	}
 }
 
-func (m *SSHManager) Connect(host, user, password string) (string, error) {
+func loadPrivateKey(keyPath string) (ssh.Signer, error) {
+	if keyPath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		keyPath = filepath.Join(home, ".ssh", "id_ed25519")
+		if _, err := os.Stat(keyPath); os.IsNotExist(err) {
+			keyPath = filepath.Join(home, ".ssh", "id_rsa")
+		}
+	}
+
+	key, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read key file %s: %w", keyPath, err)
+	}
+
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse key file %s: %w", keyPath, err)
+	}
+
+	return signer, nil
+}
+
+func (m *SSHManager) Connect(host, user, password, keyPath string) (string, error) {
+	var authMethods []ssh.AuthMethod
+
+	// Try key-based auth first if a key path is provided or default keys exist
+	if signer, err := loadPrivateKey(keyPath); err == nil {
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
+	}
+
+	// Add password auth as fallback
+	if password != "" {
+		authMethods = append(authMethods, ssh.Password(password))
+	}
+
+	if len(authMethods) == 0 {
+		return "", fmt.Errorf("no authentication methods available: provide a password or SSH key")
+	}
+
 	config := &ssh.ClientConfig{
-		User: user,
-		Auth: []ssh.AuthMethod{
-			ssh.Password(password),
-		},
+		User:            user,
+		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         30 * time.Second,
 	}
@@ -232,6 +272,7 @@ type connectArgs struct {
 	Host     string `json:"host" jsonschema:"SSH host (e.g., hostname:port)"`
 	User     string `json:"user,omitempty" jsonschema:"SSH username (if not from env)"`
 	Password string `json:"password,omitempty" jsonschema:"SSH password (if not from env)"`
+	KeyPath  string `json:"key_path,omitempty" jsonschema:"Path to SSH private key file (defaults to ~/.ssh/id_ed25519 or ~/.ssh/id_rsa)"`
 }
 
 type sessionArgs struct {
@@ -267,14 +308,19 @@ func main() {
 		if password == "" {
 			password = os.Getenv("SSH_PASSWORD")
 		}
-		if user == "" || password == "" {
+		keyPath := os.Getenv("SSH_KEY_PATH")
+		if args.KeyPath != "" {
+			keyPath = args.KeyPath
+		}
+
+		if user == "" {
 			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "SSH_USER and SSH_PASSWORD must be provided via arguments or .env file"}},
+				Content: []mcp.Content{&mcp.TextContent{Text: "SSH_USER must be provided via arguments or .env file"}},
 				IsError: true,
 			}, nil, nil
 		}
 
-		sessionID, err := mgr.Connect(args.Host, user, password)
+		sessionID, err := mgr.Connect(args.Host, user, password, keyPath)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Failed to connect: %v", err)}},
