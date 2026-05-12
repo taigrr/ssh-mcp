@@ -210,16 +210,18 @@ func TestCloseSessionRemovesIt(t *testing.T) {
 	mgr.mu.Lock()
 	mgr.sessions["test-session"] = &SSHSession{
 		active: true,
-		// No real client/session to close — will panic if Close is called
-		// We'll test the map removal logic separately
 	}
 	mgr.mu.Unlock()
 
-	// This will panic on session.Close() since session is nil
-	// Instead, test that CloseSession on nonexistent returns error
-	err := mgr.CloseSession("does-not-exist")
-	if err == nil {
-		t.Fatal("expected error")
+	if err := mgr.CloseSession("test-session"); err != nil {
+		t.Fatalf("expected close to succeed, got: %v", err)
+	}
+
+	mgr.mu.RLock()
+	_, exists := mgr.sessions["test-session"]
+	mgr.mu.RUnlock()
+	if exists {
+		t.Fatal("expected session to be removed after close")
 	}
 }
 
