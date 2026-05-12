@@ -210,8 +210,15 @@ func (m *SSHManager) CloseSession(sessionID string) error {
 	}
 
 	session.active = false
-	session.session.Close()
-	session.client.Close()
+	if session.stdin != nil {
+		_ = session.stdin.Close()
+	}
+	if session.session != nil {
+		_ = session.session.Close()
+	}
+	if session.client != nil {
+		_ = session.client.Close()
+	}
 	delete(m.sessions, sessionID)
 
 	return nil
