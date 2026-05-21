@@ -10,7 +10,7 @@ import (
 )
 
 func TestNewSSHManager(t *testing.T) {
-	mgr := NewSSHManager()
+	mgr := NewSSHManager(nil)
 	if mgr == nil {
 		t.Fatal("NewSSHManager returned nil")
 	}
@@ -23,7 +23,7 @@ func TestNewSSHManager(t *testing.T) {
 }
 
 func TestListSessionsEmpty(t *testing.T) {
-	mgr := NewSSHManager()
+	mgr := NewSSHManager(nil)
 	sessions := mgr.ListSessions()
 	if len(sessions) != 0 {
 		t.Fatalf("expected 0 sessions, got %d", len(sessions))
@@ -31,7 +31,7 @@ func TestListSessionsEmpty(t *testing.T) {
 }
 
 func TestCloseSessionNotFound(t *testing.T) {
-	mgr := NewSSHManager()
+	mgr := NewSSHManager(nil)
 	err := mgr.CloseSession("nonexistent")
 	if err == nil {
 		t.Fatal("expected error closing nonexistent session")
@@ -42,7 +42,7 @@ func TestCloseSessionNotFound(t *testing.T) {
 }
 
 func TestSendCommandSessionNotFound(t *testing.T) {
-	mgr := NewSSHManager()
+	mgr := NewSSHManager(nil)
 	_, err := mgr.SendCommand("nonexistent", "ls")
 	if err == nil {
 		t.Fatal("expected error for nonexistent session")
@@ -53,7 +53,7 @@ func TestSendCommandSessionNotFound(t *testing.T) {
 }
 
 func TestGetScreenSessionNotFound(t *testing.T) {
-	mgr := NewSSHManager()
+	mgr := NewSSHManager(nil)
 	_, err := mgr.GetScreen("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent session")
@@ -63,114 +63,108 @@ func TestGetScreenSessionNotFound(t *testing.T) {
 	}
 }
 
-func TestConnectInvalidHost(t *testing.T) {
-	mgr := NewSSHManager()
-	_, err := mgr.Connect("invalid-host-that-does-not-exist:22", "user", "pass", "")
+func TestConnectNotAllowed(t *testing.T) {
+	mgr := NewSSHManager([]string{"server1"})
+	_, err := mgr.Connect("server2")
 	if err == nil {
-		t.Fatal("expected error connecting to invalid host")
+		t.Fatal("expected error for disallowed host")
 	}
-	if !strings.Contains(err.Error(), "failed to connect") {
-		t.Fatalf("expected 'failed to connect' error, got: %v", err)
+	if !strings.Contains(err.Error(), "not in the allowed hosts list") {
+		t.Fatalf("expected 'not in the allowed hosts list' error, got: %v", err)
+	}
+}
+
+func TestConnectAllowedButUnreachable(t *testing.T) {
+	mgr := NewSSHManager([]string{"nonexistent-host-xyz"})
+	_, err := mgr.Connect("nonexistent-host-xyz")
+	if err == nil {
+		t.Fatal("expected error connecting to unreachable host")
+	}
+}
+
+func TestIsAllowed(t *testing.T) {
+	mgr := NewSSHManager([]string{"server1", "server2"})
+
+	if !mgr.isAllowed("server1") {
+		t.Fatal("expected server1 to be allowed")
+	}
+	if !mgr.isAllowed("server2") {
+		t.Fatal("expected server2 to be allowed")
+	}
+	if mgr.isAllowed("server3") {
+		t.Fatal("expected server3 to NOT be allowed")
 	}
 }
 
 func TestRenderScreenEmpty(t *testing.T) {
-	mgr := NewSSHManager()
-	emulator := vt.NewEmulator(80, 24)
-	screen := mgr.renderScreen(emulator)
+	emulator := vt.NewEmulator(termWidth, termHeight)
+	screen := renderScreen(emulator)
 
 	lines := strings.Split(screen, "\n")
-	if len(lines) != 24 {
-		t.Fatalf("expected 24 lines, got %d", len(lines))
+	if len(lines) != termHeight {
+		t.Fatalf("expected %d lines, got %d", termHeight, len(lines))
 	}
 }
 
 func TestRenderScreenWithContent(t *testing.T) {
-	mgr := NewSSHManager()
-	emulator := vt.NewEmulator(80, 24)
+	emulator := vt.NewEmulator(termWidth, termHeight)
 
-	// Write some text to the emulator
-	_, err := emulator.Write([]byte("Hello, World!"))
-	if err != nil {
+	if _, err := emulator.Write([]byte("Hello, World!")); err != nil {
 		t.Fatalf("failed to write to emulator: %v", err)
 	}
 
-	screen := mgr.renderScreen(emulator)
+	screen := renderScreen(emulator)
 	if !strings.Contains(screen, "Hello, World!") {
 		t.Fatalf("screen should contain 'Hello, World!', got:\n%s", screen)
 	}
 }
 
 func TestRenderScreenMultipleLines(t *testing.T) {
-	mgr := NewSSHManager()
-	emulator := vt.NewEmulator(80, 24)
+	emulator := vt.NewEmulator(termWidth, termHeight)
 
-	_, err := emulator.Write([]byte("Line 1\r\nLine 2\r\nLine 3"))
-	if err != nil {
+	if _, err := emulator.Write([]byte("Line 1\r\nLine 2\r\nLine 3")); err != nil {
 		t.Fatalf("failed to write to emulator: %v", err)
 	}
 
-	screen := mgr.renderScreen(emulator)
+	screen := renderScreen(emulator)
 	lines := strings.Split(screen, "\n")
 
-	if len(lines) != 24 {
-		t.Fatalf("expected 24 lines, got %d", len(lines))
+	if len(lines) != termHeight {
+		t.Fatalf("expected %d lines, got %d", termHeight, len(lines))
 	}
 
-	// Check that the content lines have the right text
-	foundLine1 := false
-	foundLine2 := false
-	foundLine3 := false
-	for _, line := range lines {
-		if strings.Contains(line, "Line 1") {
-			foundLine1 = true
-		}
-		if strings.Contains(line, "Line 2") {
-			foundLine2 = true
-		}
-		if strings.Contains(line, "Line 3") {
-			foundLine3 = true
-		}
-	}
+	foundLine1 := strings.Contains(screen, "Line 1")
+	foundLine2 := strings.Contains(screen, "Line 2")
+	foundLine3 := strings.Contains(screen, "Line 3")
 	if !foundLine1 || !foundLine2 || !foundLine3 {
 		t.Fatalf("expected all three lines in screen output, got:\n%s", screen)
 	}
 }
 
 func TestRenderLineEmpty(t *testing.T) {
-	mgr := NewSSHManager()
-	emulator := vt.NewEmulator(80, 24)
-
-	line := mgr.renderLine(emulator, 0)
-	// Empty line should have spaces
-	if len(strings.TrimRight(line, " \x1b[0m")) > 0 {
-		// May contain ANSI reset sequences, that's fine
-	}
+	emulator := vt.NewEmulator(termWidth, termHeight)
+	line := renderLine(emulator, 0)
+	_ = line
 }
 
 func TestRenderLineWithContent(t *testing.T) {
-	mgr := NewSSHManager()
-	emulator := vt.NewEmulator(80, 24)
+	emulator := vt.NewEmulator(termWidth, termHeight)
 
-	_, err := emulator.Write([]byte("test content"))
-	if err != nil {
+	if _, err := emulator.Write([]byte("test content")); err != nil {
 		t.Fatalf("failed to write to emulator: %v", err)
 	}
 
-	line := mgr.renderLine(emulator, 0)
+	line := renderLine(emulator, 0)
 	if !strings.Contains(line, "test content") {
 		t.Fatalf("expected line to contain 'test content', got: %s", line)
 	}
 }
 
 func TestSendCommandInactiveSession(t *testing.T) {
-	mgr := NewSSHManager()
+	mgr := NewSSHManager(nil)
 
-	// Create a fake inactive session
 	mgr.mu.Lock()
-	mgr.sessions["test-session"] = &SSHSession{
-		active: false,
-	}
+	mgr.sessions["test-session"] = &SSHSession{active: false}
 	mgr.mu.Unlock()
 
 	_, err := mgr.SendCommand("test-session", "ls")
@@ -183,7 +177,7 @@ func TestSendCommandInactiveSession(t *testing.T) {
 }
 
 func TestListSessionsWithEntries(t *testing.T) {
-	mgr := NewSSHManager()
+	mgr := NewSSHManager(nil)
 
 	mgr.mu.Lock()
 	mgr.sessions["session-1"] = &SSHSession{active: true}
@@ -205,12 +199,10 @@ func TestListSessionsWithEntries(t *testing.T) {
 }
 
 func TestCloseSessionRemovesIt(t *testing.T) {
-	mgr := NewSSHManager()
+	mgr := NewSSHManager(nil)
 
 	mgr.mu.Lock()
-	mgr.sessions["test-session"] = &SSHSession{
-		active: true,
-	}
+	mgr.sessions["test-session"] = &SSHSession{active: true}
 	mgr.mu.Unlock()
 
 	if err := mgr.CloseSession("test-session"); err != nil {
@@ -226,9 +218,6 @@ func TestCloseSessionRemovesIt(t *testing.T) {
 }
 
 func TestRenderScreenDimensions(t *testing.T) {
-	mgr := NewSSHManager()
-
-	// Test with different dimensions
 	for _, tc := range []struct {
 		width, height int
 	}{
@@ -238,7 +227,7 @@ func TestRenderScreenDimensions(t *testing.T) {
 		{1, 1},
 	} {
 		emulator := vt.NewEmulator(tc.width, tc.height)
-		screen := mgr.renderScreen(emulator)
+		screen := renderScreen(emulator)
 		lines := strings.Split(screen, "\n")
 		if len(lines) != tc.height {
 			t.Errorf("dimensions %dx%d: expected %d lines, got %d",
@@ -248,32 +237,26 @@ func TestRenderScreenDimensions(t *testing.T) {
 }
 
 func TestRenderScreenANSIContent(t *testing.T) {
-	mgr := NewSSHManager()
-	emulator := vt.NewEmulator(80, 24)
+	emulator := vt.NewEmulator(termWidth, termHeight)
 
-	// Write ANSI colored text
-	_, err := emulator.Write([]byte("\x1b[31mred text\x1b[0m"))
-	if err != nil {
+	if _, err := emulator.Write([]byte("\x1b[31mred text\x1b[0m")); err != nil {
 		t.Fatalf("failed to write ANSI content: %v", err)
 	}
 
-	screen := mgr.renderScreen(emulator)
+	screen := renderScreen(emulator)
 	if !strings.Contains(screen, "red text") {
 		t.Fatalf("screen should contain 'red text', got:\n%s", screen)
 	}
 }
 
 func TestRenderScreenSpecialCharacters(t *testing.T) {
-	mgr := NewSSHManager()
-	emulator := vt.NewEmulator(80, 24)
+	emulator := vt.NewEmulator(termWidth, termHeight)
 
-	// Write special characters
-	_, err := emulator.Write([]byte("$PATH=/usr/bin:/usr/local/bin"))
-	if err != nil {
+	if _, err := emulator.Write([]byte("$PATH=/usr/bin:/usr/local/bin")); err != nil {
 		t.Fatalf("failed to write special chars: %v", err)
 	}
 
-	screen := mgr.renderScreen(emulator)
+	screen := renderScreen(emulator)
 	if !strings.Contains(screen, "$PATH=/usr/bin:/usr/local/bin") {
 		t.Fatalf("screen should contain path string, got:\n%s", screen)
 	}
@@ -305,23 +288,11 @@ func TestLoadPrivateKeyInvalidContent(t *testing.T) {
 	}
 }
 
-func TestConnectNoAuthMethods(t *testing.T) {
-	mgr := NewSSHManager()
-	_, err := mgr.Connect("localhost:22", "user", "", "/nonexistent/key")
-	if err == nil {
-		t.Fatal("expected error with no auth methods")
-	}
-	if !strings.Contains(err.Error(), "no authentication methods available") {
-		t.Fatalf("expected 'no authentication methods' error, got: %v", err)
-	}
-}
-
 func TestConcurrentSessionAccess(t *testing.T) {
-	mgr := NewSSHManager()
+	mgr := NewSSHManager(nil)
 
-	// Add sessions concurrently
 	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		go func(id int) {
 			mgr.mu.Lock()
 			mgr.sessions[strings.Repeat("x", id+1)] = &SSHSession{active: true}
@@ -330,12 +301,42 @@ func TestConcurrentSessionAccess(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		<-done
 	}
 
 	sessions := mgr.ListSessions()
 	if len(sessions) != 10 {
 		t.Fatalf("expected 10 sessions, got %d", len(sessions))
+	}
+}
+
+func TestListHosts(t *testing.T) {
+	mgr := NewSSHManager([]string{"localhost"})
+
+	hosts := mgr.ListHosts()
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+	if !strings.Contains(hosts[0], "localhost") {
+		t.Fatalf("expected localhost entry, got: %s", hosts[0])
+	}
+}
+
+func TestListHostsEmpty(t *testing.T) {
+	mgr := NewSSHManager(nil)
+	hosts := mgr.ListHosts()
+	if len(hosts) != 0 {
+		t.Fatalf("expected 0 hosts, got %d", len(hosts))
+	}
+}
+
+func TestResolveHostConfig(t *testing.T) {
+	hc := resolveHostConfig("some-random-host-xyz")
+	if hc.Hostname != "some-random-host-xyz" {
+		t.Fatalf("expected hostname to be the alias itself, got: %s", hc.Hostname)
+	}
+	if hc.Port != defaultPort {
+		t.Fatalf("expected port %s, got: %s", defaultPort, hc.Port)
 	}
 }

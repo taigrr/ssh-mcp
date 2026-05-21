@@ -5,19 +5,47 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"charm.land/fang/v2"
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/vt"
-	"github.com/joho/godotenv"
+	sshconfig "github.com/kevinburke/ssh_config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spf13/cobra"
+	"github.com/taigrr/jety"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
+const (
+	defaultPort       = "22"
+	defaultTermType   = "xterm-256color"
+	termWidth         = 80
+	termHeight        = 24
+	commandDelay      = 3500 * time.Millisecond
+	screenDelay       = 2500 * time.Millisecond
+	connectionTimeout = 30 * time.Second
+	readBufferSize    = 4096
+	version           = "2.0.0"
+)
+
+// HostConfig holds resolved SSH connection details for a host alias.
+type HostConfig struct {
+	Hostname string
+	Port     string
+	User     string
+	KeyPath  string
+	Password string
+}
+
+// SSHSession represents a persistent SSH connection with a virtual terminal.
 type SSHSession struct {
 	client   *ssh.Client
 	session  *ssh.Session
@@ -27,15 +55,66 @@ type SSHSession struct {
 	active   bool
 }
 
+// SSHManager manages SSH sessions and host access control.
 type SSHManager struct {
-	sessions map[string]*SSHSession
-	mu       sync.RWMutex
+	sessions     map[string]*SSHSession
+	allowedHosts []string
+	mu           sync.RWMutex
 }
 
-func NewSSHManager() *SSHManager {
+func NewSSHManager(allowedHosts []string) *SSHManager {
 	return &SSHManager{
-		sessions: make(map[string]*SSHSession),
+		sessions:     make(map[string]*SSHSession),
+		allowedHosts: allowedHosts,
 	}
+}
+
+func resolveHostConfig(alias string) HostConfig {
+	hc := HostConfig{
+		Hostname: sshconfig.Get(alias, "HostName"),
+		Port:     sshconfig.Get(alias, "Port"),
+		User:     sshconfig.Get(alias, "User"),
+		KeyPath:  sshconfig.Get(alias, "IdentityFile"),
+	}
+
+	if hc.Hostname == "" {
+		hc.Hostname = alias
+	}
+	if hc.Port == "" {
+		hc.Port = defaultPort
+	}
+	if hc.User == "" {
+		hc.User = os.Getenv("USER")
+	}
+
+	if strings.HasPrefix(hc.KeyPath, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			hc.KeyPath = filepath.Join(home, hc.KeyPath[2:])
+		}
+	}
+
+	return hc
+}
+
+func loadAllowedHosts() []string {
+	raw := jety.Get("hosts")
+	if raw == nil {
+		return nil
+	}
+
+	slice, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	hosts := make([]string, 0, len(slice))
+	for _, val := range slice {
+		if host, ok := val.(string); ok {
+			hosts = append(hosts, host)
+		}
+	}
+
+	return hosts
 }
 
 func loadPrivateKey(keyPath string) (ssh.Signer, error) {
@@ -44,6 +123,7 @@ func loadPrivateKey(keyPath string) (ssh.Signer, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get home directory: %w", err)
 		}
+
 		keyPath = filepath.Join(home, ".ssh", "id_ed25519")
 		if _, err := os.Stat(keyPath); os.IsNotExist(err) {
 			keyPath = filepath.Join(home, ".ssh", "id_rsa")
@@ -63,31 +143,59 @@ func loadPrivateKey(keyPath string) (ssh.Signer, error) {
 	return signer, nil
 }
 
-func (m *SSHManager) Connect(host, user, password, keyPath string) (string, error) {
-	var authMethods []ssh.AuthMethod
+func buildAuthMethods(hc HostConfig) []ssh.AuthMethod {
+	var methods []ssh.AuthMethod
 
-	// Try key-based auth first if a key path is provided or default keys exist
-	if signer, err := loadPrivateKey(keyPath); err == nil {
-		authMethods = append(authMethods, ssh.PublicKeys(signer))
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		if conn, err := net.Dial("unix", sock); err == nil {
+			methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
+		}
 	}
 
-	// Add password auth as fallback
-	if password != "" {
-		authMethods = append(authMethods, ssh.Password(password))
+	if hc.KeyPath != "" {
+		if signer, err := loadPrivateKey(hc.KeyPath); err == nil {
+			methods = append(methods, ssh.PublicKeys(signer))
+		}
 	}
+
+	if len(methods) == 0 {
+		if signer, err := loadPrivateKey(""); err == nil {
+			methods = append(methods, ssh.PublicKeys(signer))
+		}
+	}
+
+	if hc.Password != "" {
+		methods = append(methods, ssh.Password(hc.Password))
+	}
+
+	return methods
+}
+
+func (m *SSHManager) isAllowed(host string) bool {
+	return slices.Contains(m.allowedHosts, host)
+}
+
+func (m *SSHManager) Connect(alias string) (string, error) {
+	if !m.isAllowed(alias) {
+		return "", fmt.Errorf("host %q is not in the allowed hosts list", alias)
+	}
+
+	hc := resolveHostConfig(alias)
+	authMethods := buildAuthMethods(hc)
 
 	if len(authMethods) == 0 {
-		return "", fmt.Errorf("no authentication methods available: provide a password or SSH key")
+		return "", fmt.Errorf("no authentication methods available for host %q", alias)
 	}
 
 	config := &ssh.ClientConfig{
-		User:            user,
+		User:            hc.User,
 		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         30 * time.Second,
+		Timeout:         connectionTimeout,
 	}
 
-	client, err := ssh.Dial("tcp", host, config)
+	addr := fmt.Sprintf("%s:%s", hc.Hostname, hc.Port)
+	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect: %w", err)
 	}
@@ -98,15 +206,11 @@ func (m *SSHManager) Connect(host, user, password, keyPath string) (string, erro
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
 
-	if err := session.RequestPty("xterm-256color", 80, 24, ssh.TerminalModes{}); err != nil {
+	if err := session.RequestPty(defaultTermType, termHeight, termWidth, ssh.TerminalModes{}); err != nil {
 		session.Close()
 		client.Close()
 		return "", fmt.Errorf("failed to request pty: %w", err)
 	}
-
-	emulator := vt.NewEmulator(80, 24)
-
-	sessionID := fmt.Sprintf("%s@%s-%d", user, host, time.Now().Unix())
 
 	stdout, err := session.StdoutPipe()
 	if err != nil {
@@ -128,6 +232,9 @@ func (m *SSHManager) Connect(host, user, password, keyPath string) (string, erro
 		return "", fmt.Errorf("failed to start shell: %w", err)
 	}
 
+	emulator := vt.NewEmulator(termWidth, termHeight)
+	sessionID := fmt.Sprintf("%s@%s:%s-%d", hc.User, hc.Hostname, hc.Port, time.Now().Unix())
+
 	sshSession := &SSHSession{
 		client:   client,
 		session:  session,
@@ -137,7 +244,7 @@ func (m *SSHManager) Connect(host, user, password, keyPath string) (string, erro
 	}
 
 	go func() {
-		buf := make([]byte, 4096)
+		buf := make([]byte, readBufferSize)
 		for sshSession.active {
 			n, err := stdout.Read(buf)
 			if err != nil {
@@ -169,15 +276,14 @@ func (m *SSHManager) SendCommand(sessionID, command string) (string, error) {
 		return "", fmt.Errorf("session %s is not active", sessionID)
 	}
 
-	_, err := session.stdin.Write([]byte(command + "\n"))
-	if err != nil {
+	if _, err := session.stdin.Write([]byte(command + "\n")); err != nil {
 		return "", fmt.Errorf("failed to send command: %w", err)
 	}
 
-	time.Sleep(3500 * time.Millisecond)
+	time.Sleep(commandDelay)
 
 	session.mu.RLock()
-	screen := m.renderScreen(session.emulator)
+	screen := renderScreen(session.emulator)
 	session.mu.RUnlock()
 
 	return screen, nil
@@ -192,9 +298,10 @@ func (m *SSHManager) GetScreen(sessionID string) (string, error) {
 		return "", fmt.Errorf("session %s not found", sessionID)
 	}
 
-	time.Sleep(2500 * time.Millisecond)
+	time.Sleep(screenDelay)
+
 	session.mu.RLock()
-	screen := m.renderScreen(session.emulator)
+	screen := renderScreen(session.emulator)
 	session.mu.RUnlock()
 
 	return screen, nil
@@ -210,6 +317,7 @@ func (m *SSHManager) CloseSession(sessionID string) error {
 	}
 
 	session.active = false
+
 	if session.stdin != nil {
 		_ = session.stdin.Close()
 	}
@@ -219,6 +327,7 @@ func (m *SSHManager) CloseSession(sessionID string) error {
 	if session.client != nil {
 		_ = session.client.Close()
 	}
+
 	delete(m.sessions, sessionID)
 
 	return nil
@@ -232,54 +341,61 @@ func (m *SSHManager) ListSessions() []string {
 	for id := range m.sessions {
 		sessions = append(sessions, id)
 	}
+
 	return sessions
 }
 
-func (m *SSHManager) renderScreen(emulator *vt.Emulator) string {
-	rows := make([]string, emulator.Height())
+func (m *SSHManager) ListHosts() []string {
+	results := make([]string, 0, len(m.allowedHosts))
+	for _, alias := range m.allowedHosts {
+		hc := resolveHostConfig(alias)
+		results = append(results, fmt.Sprintf("%s: %s@%s:%s", alias, hc.User, hc.Hostname, hc.Port))
+	}
 
-	for y := 0; y < emulator.Height(); y++ {
-		rows[y] = m.renderLine(emulator, y)
+	return results
+}
+
+func renderScreen(emulator *vt.Emulator) string {
+	rows := make([]string, emulator.Height())
+	for y := range emulator.Height() {
+		rows[y] = renderLine(emulator, y)
 	}
 
 	return strings.Join(rows, "\n")
 }
 
-func (m *SSHManager) renderLine(emulator *vt.Emulator, y int) string {
-	var result string
+func renderLine(emulator *vt.Emulator, y int) string {
+	var builder strings.Builder
 	var lastStyle uv.Style
 
-	for x := 0; x < emulator.Width(); x++ {
+	for x := range emulator.Width() {
 		cell := emulator.CellAt(x, y)
 		if cell == nil {
-			result += " "
+			builder.WriteByte(' ')
 			continue
 		}
 
 		if x == 0 || !cell.Style.Equal(&lastStyle) {
-			result += cell.Style.String()
+			builder.WriteString(cell.Style.String())
 			lastStyle = cell.Style
 		}
 
 		if cell.Content == "" {
-			result += " "
+			builder.WriteByte(' ')
 		} else {
-			result += cell.Content
+			builder.WriteString(cell.Content)
 		}
 	}
 
-	if result != "" {
-		result += "\x1b[0m"
+	if builder.Len() > 0 {
+		builder.WriteString("\x1b[0m")
 	}
 
-	return result
+	return builder.String()
 }
 
 type connectArgs struct {
-	Host     string `json:"host" jsonschema:"SSH host (e.g., hostname:port)"`
-	User     string `json:"user,omitempty" jsonschema:"SSH username (if not from env)"`
-	Password string `json:"password,omitempty" jsonschema:"SSH password (if not from env)"`
-	KeyPath  string `json:"key_path,omitempty" jsonschema:"Path to SSH private key file (defaults to ~/.ssh/id_ed25519 or ~/.ssh/id_rsa)"`
+	Host string `json:"host" jsonschema:"SSH host alias from allowed hosts list (matches ~/.ssh/config Host entries)"`
 }
 
 type sessionArgs struct {
@@ -291,43 +407,19 @@ type commandArgs struct {
 	Command   string `json:"command" jsonschema:"Command to send"`
 }
 
-func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Printf("Warning: .env file not found: %v", err)
-	}
-
-	mgr := NewSSHManager()
+func run(allowedHosts []string) {
+	mgr := NewSSHManager(allowedHosts)
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "ssh-mcp",
-		Version: "1.0.0",
+		Version: version,
 	}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "ssh_connect",
-		Description: "Connect to an SSH server and establish a persistent session",
+		Description: "Connect to an allowed SSH host by alias (resolved via ~/.ssh/config)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args connectArgs) (*mcp.CallToolResult, any, error) {
-		user := args.User
-		password := args.Password
-		if user == "" {
-			user = os.Getenv("SSH_USER")
-		}
-		if password == "" {
-			password = os.Getenv("SSH_PASSWORD")
-		}
-		keyPath := os.Getenv("SSH_KEY_PATH")
-		if args.KeyPath != "" {
-			keyPath = args.KeyPath
-		}
-
-		if user == "" {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "SSH_USER must be provided via arguments or .env file"}},
-				IsError: true,
-			}, nil, nil
-		}
-
-		sessionID, err := mgr.Connect(args.Host, user, password, keyPath)
+		sessionID, err := mgr.Connect(args.Host)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Failed to connect: %v", err)}},
@@ -383,7 +475,24 @@ func main() {
 		if len(sessions) == 0 {
 			text = "No active SSH sessions"
 		} else {
-			text = fmt.Sprintf("Active SSH sessions:\n%v", sessions)
+			text = "Active SSH sessions:\n" + strings.Join(sessions, "\n")
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: text}},
+		}, nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "ssh_list_hosts",
+		Description: "List all allowed SSH hosts with resolved connection details",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args struct{}) (*mcp.CallToolResult, any, error) {
+		hosts := mgr.ListHosts()
+		var text string
+		if len(hosts) == 0 {
+			text = "No configured hosts"
+		} else {
+			text = "Available hosts:\n" + strings.Join(hosts, "\n")
 		}
 
 		return &mcp.CallToolResult{
@@ -409,5 +518,42 @@ func main() {
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatalf("Server error: %v", err)
+	}
+}
+
+func main() {
+	var allowedHostsFlag string
+
+	cmd := &cobra.Command{
+		Use:   "ssh-mcp",
+		Short: "SSH MCP server providing remote shell access via Model Context Protocol",
+		RunE: func(c *cobra.Command, args []string) error {
+			var hosts []string
+
+			if allowedHostsFlag != "" {
+				for host := range strings.SplitSeq(allowedHostsFlag, ",") {
+					host = strings.TrimSpace(host)
+					if host != "" {
+						hosts = append(hosts, host)
+					}
+				}
+			} else {
+				jety.SetConfigFile("config.json")
+				_ = jety.SetConfigType("json")
+				if err := jety.ReadInConfig(); err != nil {
+					log.Printf("Warning: config file not found: %v", err)
+				}
+				hosts = loadAllowedHosts()
+			}
+
+			run(hosts)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&allowedHostsFlag, "allowed-hosts", "", "Comma-separated list of allowed SSH host aliases")
+
+	if err := fang.Execute(context.Background(), cmd); err != nil {
+		os.Exit(1)
 	}
 }
