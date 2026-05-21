@@ -1,138 +1,148 @@
-# SSH MCP Server
+# ssh-mcp
 
-An MCP (Model Control Protocol) server that provides SSH connectivity with persistent terminal sessions and screen content capture using Charm's VT terminal emulator.
+MCP server providing persistent SSH sessions for AI coding agents via the [Model Context Protocol](https://modelcontextprotocol.io).
+
+## The Problem
+
+AI coding agents can't interact with remote machines. You need to manually SSH in, run commands, and paste output back. For fleet management, server debugging, or remote development, this kills the feedback loop.
+
+## The Solution
+
+**ssh-mcp** gives your AI agent direct SSH access to an allowed set of hosts. It resolves connections from `~/.ssh/config`, authenticates via ssh-agent/gpg-agent, and exposes a virtual terminal so the agent sees exactly what you'd see.
+
+```bash
+# Start with allowed hosts
+ssh-mcp --allowed-hosts="web1,db1,staging"
+```
 
 ## Features
 
-- **Persistent SSH Sessions**: Establish SSH connections that remain active across multiple commands
-- **Terminal Emulation**: Full VT100 terminal emulation using Charm's VT library
-- **Screen Content Capture**: Get the current terminal screen content as text
-- **Multiple Sessions**: Support for multiple concurrent SSH sessions
-- **SSH Key Authentication**: Supports key-based auth (ed25519, RSA) with automatic key discovery
-- **Environment Configuration**: Load SSH credentials from `.env` file
+- **SSH config integration** — Resolves hosts from `~/.ssh/config` (HostName, Port, User, IdentityFile)
+- **Agent forwarding** — Authenticates via `ssh-agent` or `gpg-agent` (SSH_AUTH_SOCK)
+- **Virtual terminal** — Full PTY emulation with ANSI rendering via [charmbracelet/x/vt](https://github.com/charmbracelet/x)
+- **Allowlist-only access** — Only explicitly permitted hosts can be connected to
+- **Session management** — Multiple concurrent sessions with independent state
+- **Zero config** — Works out of the box if your `~/.ssh/config` is set up
 
 ## Installation
 
 ```bash
+go install github.com/taigrr/ssh-mcp@latest
+```
+
+## Requirements
+
+- Go >= **1.24** (for installation)
+- `~/.ssh/config` entries for your hosts
+- One of:
+  - `ssh-agent` or `gpg-agent` running (recommended)
+  - SSH private key at `~/.ssh/id_ed25519` or `~/.ssh/id_rsa`
+
+## Quick Start
+
+1. Ensure your hosts are in `~/.ssh/config`:
+
+```
+Host my-desktop
+    HostName 10.0.1.50
+    User tai
+```
+
+2. Run with allowed hosts:
+
+```bash
+ssh-mcp --allowed-hosts="my-desktop"
+```
+
+3. Or use a config file (`config.json` in working directory):
+
+```json
+{
+  "hosts": ["my-desktop", "web1", "db1"]
+}
+```
+
+## 🔌 MCP Tools
+
+| Tool                | Description                                         |
+| ------------------- | --------------------------------------------------- |
+| `ssh_connect`       | Connect to an allowed host by alias                 |
+| `ssh_send_command`  | Send a command to a session and get screen output   |
+| `ssh_get_screen`    | Get the current terminal screen content             |
+| `ssh_list_sessions` | List all active sessions                            |
+| `ssh_list_hosts`    | List allowed hosts with resolved connection details |
+| `ssh_close_session` | Close a session                                     |
+
+## ⚙️ Crush Configuration
+
+Add to your project's `crush.json` or `.crush.json`:
+
+```json
+{
+  "mcp": {
+    "ssh": {
+      "command": "ssh-mcp",
+      "args": ["--allowed-hosts=my-desktop,staging"],
+      "type": "stdio"
+    }
+  }
+}
+```
+
+## Flags
+
+| Flag              | Description                                      |
+| ----------------- | ------------------------------------------------ |
+| `--allowed-hosts` | Comma-separated list of allowed SSH host aliases |
+
+If `--allowed-hosts` is not provided, falls back to `config.json` in the working directory.
+
+## How It Works
+
+1. **Resolve** — Looks up host alias in `~/.ssh/config` for connection details
+2. **Authenticate** — Tries ssh-agent → key file → password (in order)
+3. **Connect** — Opens a PTY session with `xterm-256color` terminal
+4. **Emulate** — Captures output in a virtual terminal emulator
+5. **Expose** — Returns rendered screen content (with ANSI) to the MCP client
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────┐
+│                   ssh-mcp                        │
+│                                                  │
+│  ~/.ssh/config ──► Host Resolution               │
+│                                                  │
+│  SSH_AUTH_SOCK ──► Authentication                │
+│                                                  │
+│  Sessions:                                       │
+│  ├─ tai@10.0.1.50:22 (PTY + VT)                  │
+│  ├─ admin@web1.example.com:22  (PTY + VT)        │
+│  └─ ...                                          │
+│                                                  │
+│  MCP Tools ◄──► stdio transport ◄──► AI Agent    │
+└──────────────────────────────────────────────────┘
+```
+
+## Development
+
+```bash
+# Build
 go build -o ssh-mcp .
+
+# Test
+go test ./...
+
+# Lint
+staticcheck ./...
 ```
 
-## Configuration
+## Related Projects
 
-Create a `.env` file in the same directory as the executable:
+- [Crush](https://github.com/charmbracelet/crush) — Charm's AI coding agent
+- [charmbracelet/x/vt](https://github.com/charmbracelet/x) — Virtual terminal emulator
+- [neocrush](https://github.com/taigrr/neocrush) — LSP/MCP bridge for Crush + Neovim
 
-```bash
-SSH_USER=your_username
-SSH_PASSWORD=your_password
-SSH_KEY_PATH=/path/to/private/key  # Optional, defaults to ~/.ssh/id_ed25519 or ~/.ssh/id_rsa
-```
+## License
 
-You can also provide credentials directly when connecting. Key-based authentication is tried first if a key is available, with password as fallback.
-
-## Available Tools
-
-### `ssh_connect`
-Connect to an SSH server and establish a persistent session.
-
-**Parameters:**
-- `host` (required): SSH host (e.g., "user@hostname:port" or "hostname:port")
-- `user` (optional): SSH username (if not in host or .env)
-- `password` (optional): SSH password (if not from .env)
-- `key_path` (optional): Path to SSH private key file (defaults to `~/.ssh/id_ed25519` or `~/.ssh/id_rsa`)
-
-**Returns:** Session ID for use with other commands
-
-### `ssh_send_command`
-Send a command to an SSH session and get the screen output.
-
-**Parameters:**
-- `session_id` (required): SSH session ID from ssh_connect
-- `command` (required): Command to send to the SSH session
-
-**Returns:** Current terminal screen content after command execution
-
-### `ssh_get_screen`
-Get the current screen content of an SSH session without sending a command.
-
-**Parameters:**
-- `session_id` (required): SSH session ID
-
-**Returns:** Current terminal screen content
-
-### `ssh_list_sessions`
-List all active SSH sessions.
-
-**Returns:** List of active session IDs
-
-### `ssh_close_session`
-Close an SSH session.
-
-**Parameters:**
-- `session_id` (required): SSH session ID to close
-
-**Returns:** Confirmation message
-
-## Usage Example
-
-1. **Connect to SSH server:**
-   ```json
-   {
-     "name": "ssh_connect",
-     "arguments": {
-       "host": "user@example.com:22"
-     }
-   }
-   ```
-
-2. **Send commands:**
-   ```json
-   {
-     "name": "ssh_send_command",
-     "arguments": {
-       "session_id": "user@example.com:22-1234567890",
-       "command": "ls -la"
-     }
-   }
-   ```
-
-3. **Get current screen:**
-   ```json
-   {
-     "name": "ssh_get_screen",
-     "arguments": {
-       "session_id": "user@example.com:22-1234567890"
-     }
-   }
-   ```
-
-## Running the Server
-
-The server runs as an MCP server using stdio transport:
-
-```bash
-./ssh-mcp
-```
-
-## Technical Details
-
-- Uses Charm's VT terminal emulator for accurate terminal emulation
-- Maintains persistent SSH connections with proper PTY allocation
-- Captures terminal screen content including ANSI formatting
-- Thread-safe session management
-- Automatic session cleanup on connection close
-
-## Security Notes
-
-- SSH connections use `InsecureIgnoreHostKey()` for simplicity - not recommended for production
-- Key-based authentication is preferred over password authentication
-- Credentials can be stored in `.env` file - ensure proper file permissions
-- Private key files should have `600` permissions
-- Sessions remain active until explicitly closed or connection is lost
-
-## Dependencies
-
-- `github.com/charmbracelet/x/vt` - Terminal emulator
-- `github.com/charmbracelet/ultraviolet` - Terminal styling
-- `github.com/modelcontextprotocol/go-sdk` - MCP protocol implementation
-- `golang.org/x/crypto/ssh` - SSH client
-- `github.com/joho/godotenv` - Environment file loading
+[0BSD](LICENSE) © [Tai Groot](https://github.com/taigrr)
