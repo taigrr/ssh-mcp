@@ -129,13 +129,16 @@ func uploadDir(client *sftp.Client, localRoot, remoteRoot string) (int, error) {
 	}
 
 	count := 0
-	err := filepath.Walk(localRoot, func(path string, info os.FileInfo, err error) error {
+	var failPath string
+	walkErr := filepath.Walk(localRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			failPath = path
 			return err
 		}
 
 		rel, err := filepath.Rel(localRoot, path)
 		if err != nil {
+			failPath = path
 			return err
 		}
 		// Use forward slashes for remote paths regardless of local OS
@@ -145,17 +148,25 @@ func uploadDir(client *sftp.Client, localRoot, remoteRoot string) (int, error) {
 		}
 
 		if info.IsDir() {
-			return client.MkdirAll(remotePath)
+			if err := client.MkdirAll(remotePath); err != nil {
+				failPath = path
+				return err
+			}
+			return nil
 		}
 
 		if err := uploadFile(client, path, remotePath, info.Mode()); err != nil {
+			failPath = path
 			return err
 		}
 		count++
 		return nil
 	})
 
-	return count, err
+	if walkErr != nil {
+		return count, &TransferError{Op: "upload", Transferred: count, Path: failPath, Err: walkErr}
+	}
+	return count, nil
 }
 
 func downloadFile(client *sftp.Client, remotePath, localPath string, mode os.FileMode) error {
@@ -195,7 +206,7 @@ func downloadDir(client *sftp.Client, remoteRoot, localRoot string) (int, error)
 	walker := client.Walk(remoteRoot)
 	for walker.Step() {
 		if err := walker.Err(); err != nil {
-			return count, err
+			return count, &TransferError{Op: "download", Transferred: count, Path: walker.Path(), Err: err}
 		}
 
 		remotePath := walker.Path()
@@ -210,13 +221,13 @@ func downloadDir(client *sftp.Client, remoteRoot, localRoot string) (int, error)
 
 		if info.IsDir() {
 			if err := os.MkdirAll(localPath, info.Mode()); err != nil {
-				return count, fmt.Errorf("failed to create local directory: %w", err)
+				return count, &TransferError{Op: "download", Transferred: count, Path: remotePath, Err: fmt.Errorf("failed to create local directory: %w", err)}
 			}
 			continue
 		}
 
 		if err := downloadFile(client, remotePath, localPath, info.Mode()); err != nil {
-			return count, err
+			return count, &TransferError{Op: "download", Transferred: count, Path: remotePath, Err: err}
 		}
 		count++
 	}
