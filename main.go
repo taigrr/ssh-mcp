@@ -32,6 +32,8 @@ const (
 	commandDelay      = 3500 * time.Millisecond
 	screenDelay       = 2500 * time.Millisecond
 	connectionTimeout = 30 * time.Second
+	keepaliveInterval = 30 * time.Second
+	keepaliveTimeout  = 15 * time.Second
 	readBufferSize    = 4096
 	version           = "2.0.0"
 )
@@ -195,10 +197,22 @@ func (m *SSHManager) Connect(alias string) (string, error) {
 	}
 
 	addr := fmt.Sprintf("%s:%s", hc.Hostname, hc.Port)
-	client, err := ssh.Dial("tcp", addr, config)
+	conn, err := net.DialTimeout("tcp", addr, connectionTimeout)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect: %w", err)
 	}
+
+	tcpConn := conn.(*net.TCPConn)
+	_ = tcpConn.SetKeepAlive(true)
+	_ = tcpConn.SetKeepAlivePeriod(keepaliveInterval)
+
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		conn.Close()
+		return "", fmt.Errorf("failed to establish SSH connection: %w", err)
+	}
+
+	client := ssh.NewClient(sshConn, chans, reqs)
 
 	session, err := client.NewSession()
 	if err != nil {
@@ -248,11 +262,32 @@ func (m *SSHManager) Connect(alias string) (string, error) {
 		for sshSession.active {
 			n, err := stdout.Read(buf)
 			if err != nil {
+				sshSession.mu.Lock()
+				sshSession.active = false
+				sshSession.mu.Unlock()
 				break
 			}
 			sshSession.mu.Lock()
 			_, _ = emulator.Write(buf[:n])
 			sshSession.mu.Unlock()
+		}
+	}()
+
+	// SSH-level keepalive
+	go func() {
+		ticker := time.NewTicker(keepaliveInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			if !sshSession.active {
+				return
+			}
+			_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+			if err != nil {
+				sshSession.mu.Lock()
+				sshSession.active = false
+				sshSession.mu.Unlock()
+				return
+			}
 		}
 	}()
 
@@ -272,7 +307,10 @@ func (m *SSHManager) SendCommand(sessionID, command string) (string, error) {
 		return "", fmt.Errorf("session %s not found", sessionID)
 	}
 
-	if !session.active {
+	session.mu.RLock()
+	active := session.active
+	session.mu.RUnlock()
+	if !active {
 		return "", fmt.Errorf("session %s is not active", sessionID)
 	}
 
