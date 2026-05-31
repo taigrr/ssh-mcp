@@ -25,10 +25,10 @@ func (m *SSHManager) Upload(sessionID, localPath, remotePath string) (string, er
 	m.mu.RUnlock()
 
 	if !exists {
-		return "", fmt.Errorf("session %s not found", sessionID)
+		return "", fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 	if !session.active {
-		return "", fmt.Errorf("session %s is not active", sessionID)
+		return "", fmt.Errorf("%w: %s", ErrSessionInactive, sessionID)
 	}
 
 	client, err := newSFTPClient(session.client)
@@ -64,10 +64,10 @@ func (m *SSHManager) Download(sessionID, remotePath, localPath string) (string, 
 	m.mu.RUnlock()
 
 	if !exists {
-		return "", fmt.Errorf("session %s not found", sessionID)
+		return "", fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 	if !session.active {
-		return "", fmt.Errorf("session %s is not active", sessionID)
+		return "", fmt.Errorf("%w: %s", ErrSessionInactive, sessionID)
 	}
 
 	client, err := newSFTPClient(session.client)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,44 +34,32 @@ func TestListSessionsEmpty(t *testing.T) {
 func TestCloseSessionNotFound(t *testing.T) {
 	mgr := NewSSHManager(nil)
 	err := mgr.CloseSession("nonexistent")
-	if err == nil {
-		t.Fatal("expected error closing nonexistent session")
-	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("expected 'not found' error, got: %v", err)
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("expected ErrSessionNotFound, got: %v", err)
 	}
 }
 
 func TestSendCommandSessionNotFound(t *testing.T) {
 	mgr := NewSSHManager(nil)
 	_, err := mgr.SendCommand("nonexistent", "ls")
-	if err == nil {
-		t.Fatal("expected error for nonexistent session")
-	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("expected 'not found' error, got: %v", err)
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("expected ErrSessionNotFound, got: %v", err)
 	}
 }
 
 func TestGetScreenSessionNotFound(t *testing.T) {
 	mgr := NewSSHManager(nil)
 	_, err := mgr.GetScreen("nonexistent")
-	if err == nil {
-		t.Fatal("expected error for nonexistent session")
-	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Fatalf("expected 'not found' error, got: %v", err)
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("expected ErrSessionNotFound, got: %v", err)
 	}
 }
 
 func TestConnectNotAllowed(t *testing.T) {
 	mgr := NewSSHManager([]string{"server1"})
 	_, err := mgr.Connect("server2")
-	if err == nil {
-		t.Fatal("expected error for disallowed host")
-	}
-	if !strings.Contains(err.Error(), "not in the allowed hosts list") {
-		t.Fatalf("expected 'not in the allowed hosts list' error, got: %v", err)
+	if !errors.Is(err, ErrHostNotAllowed) {
+		t.Fatalf("expected ErrHostNotAllowed, got: %v", err)
 	}
 }
 
@@ -168,11 +157,8 @@ func TestSendCommandInactiveSession(t *testing.T) {
 	mgr.mu.Unlock()
 
 	_, err := mgr.SendCommand("test-session", "ls")
-	if err == nil {
-		t.Fatal("expected error for inactive session")
-	}
-	if !strings.Contains(err.Error(), "not active") {
-		t.Fatalf("expected 'not active' error, got: %v", err)
+	if !errors.Is(err, ErrSessionInactive) {
+		t.Fatalf("expected ErrSessionInactive, got: %v", err)
 	}
 }
 

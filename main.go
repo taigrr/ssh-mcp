@@ -179,14 +179,14 @@ func (m *SSHManager) isAllowed(host string) bool {
 
 func (m *SSHManager) Connect(alias string) (string, error) {
 	if !m.isAllowed(alias) {
-		return "", fmt.Errorf("host %q is not in the allowed hosts list", alias)
+		return "", fmt.Errorf("%w: %q", ErrHostNotAllowed, alias)
 	}
 
 	hc := resolveHostConfig(alias)
 	authMethods := buildAuthMethods(hc)
 
 	if len(authMethods) == 0 {
-		return "", fmt.Errorf("no authentication methods available for host %q", alias)
+		return "", fmt.Errorf("%w for host %q", ErrNoAuthMethods, alias)
 	}
 
 	config := &ssh.ClientConfig{
@@ -304,14 +304,14 @@ func (m *SSHManager) SendCommand(sessionID, command string) (string, error) {
 	m.mu.RUnlock()
 
 	if !exists {
-		return "", fmt.Errorf("session %s not found", sessionID)
+		return "", fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
 	session.mu.RLock()
 	active := session.active
 	session.mu.RUnlock()
 	if !active {
-		return "", fmt.Errorf("session %s is not active", sessionID)
+		return "", fmt.Errorf("%w: %s", ErrSessionInactive, sessionID)
 	}
 
 	if _, err := session.stdin.Write([]byte(command + "\n")); err != nil {
@@ -333,7 +333,7 @@ func (m *SSHManager) GetScreen(sessionID string) (string, error) {
 	m.mu.RUnlock()
 
 	if !exists {
-		return "", fmt.Errorf("session %s not found", sessionID)
+		return "", fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
 	time.Sleep(screenDelay)
@@ -351,7 +351,7 @@ func (m *SSHManager) CloseSession(sessionID string) error {
 
 	session, exists := m.sessions[sessionID]
 	if !exists {
-		return fmt.Errorf("session %s not found", sessionID)
+		return fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
 	session.active = false
