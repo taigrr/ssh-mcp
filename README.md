@@ -20,6 +20,7 @@ ssh-mcp --allowed-hosts="web1,db1,staging"
 - **SSH config integration** — Resolves hosts from `~/.ssh/config` (HostName, Port, User, IdentityFile)
 - **Agent forwarding** — Authenticates via `ssh-agent` or `gpg-agent` (SSH_AUTH_SOCK)
 - **Virtual terminal** — Full PTY emulation with ANSI rendering via [charmbracelet/x/vt](https://github.com/charmbracelet/x)
+- **File transfer** — Bidirectional file and directory transfers via SFTP (recursive)
 - **Allowlist-only access** — Only explicitly permitted hosts can be connected to
 - **Session management** — Multiple concurrent sessions with independent state
 - **Zero config** — Works out of the box if your `~/.ssh/config` is set up
@@ -69,6 +70,8 @@ ssh-mcp --allowed-hosts="my-desktop"
 | `ssh_connect`       | Connect to an allowed host by alias                 |
 | `ssh_send_command`  | Send a command to a session and get screen output   |
 | `ssh_get_screen`    | Get the current terminal screen content             |
+| `ssh_upload`        | Upload a local file or directory via SFTP           |
+| `ssh_download`      | Download a remote file or directory via SFTP        |
 | `ssh_list_sessions` | List all active sessions                            |
 | `ssh_list_hosts`    | List allowed hosts with resolved connection details |
 | `ssh_close_session` | Close a session                                     |

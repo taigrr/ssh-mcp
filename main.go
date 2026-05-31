@@ -407,6 +407,18 @@ type commandArgs struct {
 	Command   string `json:"command" jsonschema:"Command to send"`
 }
 
+type uploadArgs struct {
+	SessionID  string `json:"session_id" jsonschema:"SSH session ID"`
+	LocalPath  string `json:"local_path" jsonschema:"Local file or directory path to upload"`
+	RemotePath string `json:"remote_path" jsonschema:"Destination path on the remote host"`
+}
+
+type downloadArgs struct {
+	SessionID  string `json:"session_id" jsonschema:"SSH session ID"`
+	RemotePath string `json:"remote_path" jsonschema:"Remote file or directory path to download"`
+	LocalPath  string `json:"local_path" jsonschema:"Destination path on the local host"`
+}
+
 func run(allowedHosts []string) {
 	mgr := NewSSHManager(allowedHosts)
 
@@ -497,6 +509,40 @@ func run(allowedHosts []string) {
 
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: text}},
+		}, nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "ssh_upload",
+		Description: "Upload a local file or directory to a remote host via SFTP (recursive for directories)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args uploadArgs) (*mcp.CallToolResult, any, error) {
+		result, err := mgr.Upload(args.SessionID, args.LocalPath, args.RemotePath)
+		if err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Failed to upload: %v", err)}},
+				IsError: true,
+			}, nil, nil
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: result}},
+		}, nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "ssh_download",
+		Description: "Download a remote file or directory from a remote host via SFTP (recursive for directories)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args downloadArgs) (*mcp.CallToolResult, any, error) {
+		result, err := mgr.Download(args.SessionID, args.RemotePath, args.LocalPath)
+		if err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("Failed to download: %v", err)}},
+				IsError: true,
+			}, nil, nil
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: result}},
 		}, nil, nil
 	})
 
