@@ -11,6 +11,7 @@ const (
 	screenDelay       = 2500 * time.Millisecond
 	connectionTimeout = 30 * time.Second
 	keepaliveInterval = 30 * time.Second
+	keepaliveTimeout  = 15 * time.Second
 	readBufferSize    = 4096
 	keepaliveRequest  = "keepalive@openssh.com"
 	ansiReset         = "\x1b[0m"

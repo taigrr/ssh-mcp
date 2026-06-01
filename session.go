@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -22,6 +23,7 @@ type SSHSession struct {
 	emulator *vt.Emulator
 	mu       sync.RWMutex
 	active   bool
+	cancel   context.CancelFunc
 }
 
 // SSHManager owns all live sessions and the allowed-host policy.
@@ -133,16 +135,18 @@ func (m *SSHManager) Connect(alias string) (string, error) {
 	emulator := vt.NewEmulator(termWidth, termHeight)
 	sessionID := fmt.Sprintf("%s@%s:%s-%d", hc.User, hc.Hostname, hc.Port, time.Now().Unix())
 
+	ctx, cancel := context.WithCancel(context.Background())
 	sshSession := &SSHSession{
 		client:   client,
 		session:  session,
 		stdin:    stdin,
 		emulator: emulator,
 		active:   true,
+		cancel:   cancel,
 	}
 
 	go sshSession.pumpOutput(stdout)
-	go sshSession.runKeepalive()
+	go sshSession.runKeepalive(ctx)
 
 	m.mu.Lock()
 	m.sessions[sessionID] = sshSession
@@ -169,19 +173,44 @@ func (s *SSHSession) pumpOutput(stdout io.Reader) {
 }
 
 // runKeepalive sends periodic keepalive requests to detect dead connections
-// and marks the session inactive when the request fails or the session is
-// already closed.
-func (s *SSHSession) runKeepalive() {
+// and marks the session inactive when the request fails or times out.
+// It also writes a null byte to stdin on each tick so that the SSH channel
+// itself sees activity (PTY line discipline strips \x00 before the shell sees
+// it, so the shell is unaffected).
+func (s *SSHSession) runKeepalive(ctx context.Context) {
 	ticker := time.NewTicker(keepaliveInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		if !s.isActive() {
+	for {
+		select {
+		case <-ctx.Done():
 			return
-		}
-		if _, _, err := s.client.SendRequest(keepaliveRequest, true, nil); err != nil {
-			s.markInactive()
-			return
+		case <-ticker.C:
+			if !s.isActive() {
+				return
+			}
+			// Connection-level keepalive with a hard timeout so the goroutine
+			// never blocks forever when the server doesn't reply.
+			result := make(chan error, 1)
+			go func() {
+				_, _, err := s.client.SendRequest(keepaliveRequest, true, nil)
+				result <- err
+			}()
+			select {
+			case err := <-result:
+				if err != nil {
+					s.markInactive()
+					return
+				}
+			case <-time.After(keepaliveTimeout):
+				s.markInactive()
+				return
+			case <-ctx.Done():
+				return
+			}
+			// Channel-level keepalive: null byte is stripped by PTY line
+			// discipline so the shell never sees it.
+			_, _ = s.stdin.Write([]byte{0})
 		}
 	}
 }
@@ -237,6 +266,9 @@ func (m *SSHManager) CloseSession(sessionID string) error {
 		return fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
 	}
 
+	if session.cancel != nil {
+		session.cancel()
+	}
 	session.active = false
 
 	if session.stdin != nil {
