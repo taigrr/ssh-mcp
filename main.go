@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"strings"
@@ -51,12 +52,22 @@ func parseAllowedHostsFlag(value string) []string {
 }
 
 // loadAllowedHostsFromConfig reads the host list from config.json in the
-// working directory. Missing config is logged but not fatal.
+// working directory. A missing config file is treated as an expected empty
+// configuration so stdio clients do not see startup noise before the MCP
+// handshake.
 func loadAllowedHostsFromConfig() []string {
 	jety.SetConfigFile(configFileName)
 	_ = jety.SetConfigType(configFileType)
+	if _, err := os.Stat(configFileName); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		log.Printf("Warning: could not stat %s: %v", configFileName, err)
+		return nil
+	}
 	if err := jety.ReadInConfig(); err != nil {
-		log.Printf("Warning: config file not found: %v", err)
+		log.Printf("Warning: failed to read %s: %v", configFileName, err)
+		return nil
 	}
 	return loadAllowedHosts()
 }
