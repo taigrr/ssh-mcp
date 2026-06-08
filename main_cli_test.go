@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -48,6 +50,28 @@ func TestLoadAllowedHostsFromConfigMissingFileIsSilent(t *testing.T) {
 	}
 	if logs.Len() != 0 {
 		t.Fatalf("expected missing config to be silent, got log output %q", logs.String())
+	}
+}
+
+func TestIsExpectedShutdown(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "plain eof", err: io.EOF, want: true},
+		{name: "wrapped eof", err: errors.New("server is closing: EOF"), want: true},
+		{name: "closed network", err: errors.New("write |1: use of closed network connection"), want: true},
+		{name: "real error", err: errors.New("boom"), want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isExpectedShutdown(test.err); got != test.want {
+				t.Fatalf("expected %v, got %v for %v", test.want, got, test.err)
+			}
+		})
 	}
 }
 
