@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -62,7 +63,10 @@ func TestIsExpectedShutdown(t *testing.T) {
 		{name: "nil", err: nil, want: false},
 		{name: "plain eof", err: io.EOF, want: true},
 		{name: "wrapped eof", err: errors.New("server is closing: EOF"), want: true},
+		{name: "closed pipe sentinel", err: io.ErrClosedPipe, want: true},
+		{name: "os closed sentinel", err: os.ErrClosed, want: true},
 		{name: "closed network", err: errors.New("write |1: use of closed network connection"), want: true},
+		{name: "wrapped closed network", err: os.NewSyscallError("write", net.ErrClosed), want: true},
 		{name: "real error", err: errors.New("boom"), want: false},
 	}
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"os"
 	"strings"
 
@@ -38,12 +39,12 @@ func isExpectedShutdown(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, os.ErrClosed) {
 		return true
 	}
 
 	message := err.Error()
-	return strings.Contains(message, "server is closing: EOF") || strings.Contains(message, "use of closed network connection")
+	return strings.Contains(message, "server is closing: EOF") || strings.Contains(message, "use of closed network connection") || strings.Contains(message, net.ErrClosed.Error())
 }
 
 // parseAllowedHostsFlag splits a comma-separated --allowed-hosts value into
