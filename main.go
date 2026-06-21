@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
+	"net"
 	"os"
 	"strings"
 
@@ -19,8 +21,8 @@ const (
 )
 
 // run boots the MCP server with the given allowlist and serves until the
-// transport returns. It exits the process on transport errors.
-func run(allowedHosts []string) {
+// transport returns.
+func run(allowedHosts []string) error {
 	mgr := NewSSHManager(allowedHosts)
 
 	server := mcp.NewServer(&mcp.Implementation{
@@ -30,9 +32,19 @@ func run(allowedHosts []string) {
 
 	registerTools(server, mgr)
 
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		log.Fatalf("Server error: %v", err)
+	return server.Run(context.Background(), &mcp.StdioTransport{})
+}
+
+func isExpectedShutdown(err error) bool {
+	if err == nil {
+		return false
 	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, os.ErrClosed) {
+		return true
+	}
+
+	message := err.Error()
+	return strings.Contains(message, "server is closing: EOF") || strings.Contains(message, "use of closed network connection") || strings.Contains(message, net.ErrClosed.Error())
 }
 
 // parseAllowedHostsFlag splits a comma-separated --allowed-hosts value into
@@ -83,7 +95,14 @@ func main() {
 			if hosts == nil {
 				hosts = loadAllowedHostsFromConfig()
 			}
-			run(hosts)
+			err := run(hosts)
+			if isExpectedShutdown(err) {
+				return nil
+			}
+			if err != nil {
+				log.Printf("Server error: %v", err)
+				return err
+			}
 			return nil
 		},
 	}
