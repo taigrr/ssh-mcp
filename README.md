@@ -92,6 +92,66 @@ Add to your project's `crush.json` or `.crush.json`:
 }
 ```
 
+## 🤖 Claude Configuration
+
+### Claude Code
+
+Register the server with the Claude Code CLI (writes to your MCP config):
+
+```bash
+claude mcp add ssh -- ssh-mcp --allowed-hosts=my-desktop,staging
+```
+
+Or add it manually to `~/.claude.json` (global) or `.mcp.json` (project):
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-mcp",
+      "args": ["--allowed-hosts=my-desktop,staging"],
+      "type": "stdio"
+    }
+  }
+}
+```
+
+### Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "ssh-mcp",
+      "args": ["--allowed-hosts=my-desktop,staging"]
+    }
+  }
+}
+```
+
+If `ssh-mcp` is not on your `PATH`, use the absolute path (e.g. the output of `which ssh-mcp`, typically `~/go/bin/ssh-mcp`) as the `command`. Because the server authenticates via `ssh-agent`, ensure `SSH_AUTH_SOCK` is available to the Claude process; you can pass it explicitly:
+
+```json
+{
+  "mcpServers": {
+    "ssh": {
+      "command": "/Users/you/go/bin/ssh-mcp",
+      "args": ["--allowed-hosts=my-desktop,staging"],
+      "env": {
+        "SSH_AUTH_SOCK": "/path/to/ssh-agent.sock"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop after editing the config.
+
 ## Flags
 
 | Flag              | Description                                      |
