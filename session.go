@@ -20,10 +20,22 @@ type SSHSession struct {
 	client   *ssh.Client
 	session  *ssh.Session
 	stdin    io.WriteCloser
-	emulator *vt.Emulator
+	stdinMu  sync.Mutex
+	emulator *vt.SafeEmulator
 	mu       sync.RWMutex
 	active   bool
 	cancel   context.CancelFunc
+}
+
+// writeStdin serializes all writes to the remote shell's stdin. Terminal
+// query responses, keepalive bytes, and user commands all share this pipe;
+// without serialization their bytes interleave mid-sequence and corrupt the
+// query/response handshake that full-screen apps like tmux rely on at startup.
+func (s *SSHSession) writeStdin(p []byte) error {
+	s.stdinMu.Lock()
+	defer s.stdinMu.Unlock()
+	_, err := s.stdin.Write(p)
+	return err
 }
 
 // SSHManager owns all live sessions and the allowed-host policy.
@@ -132,7 +144,7 @@ func (m *SSHManager) Connect(alias string) (string, error) {
 		return "", fmt.Errorf("failed to start shell: %w", err)
 	}
 
-	emulator := vt.NewEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(termWidth, termHeight)
 	sessionID := fmt.Sprintf("%s@%s:%s-%d", hc.User, hc.Hostname, hc.Port, time.Now().Unix())
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -167,9 +179,7 @@ func (s *SSHSession) pumpOutput(stdout io.Reader) {
 			s.markInactive()
 			return
 		}
-		s.mu.Lock()
 		_, _ = s.emulator.Write(buf[:n])
-		s.mu.Unlock()
 	}
 }
 
@@ -186,7 +196,7 @@ func (s *SSHSession) pumpInput() {
 			return
 		}
 		if n > 0 {
-			if _, err := s.stdin.Write(buf[:n]); err != nil {
+			if err := s.writeStdin(buf[:n]); err != nil {
 				return
 			}
 		}
@@ -231,7 +241,7 @@ func (s *SSHSession) runKeepalive(ctx context.Context) {
 			}
 			// Channel-level keepalive: null byte is stripped by PTY line
 			// discipline so the shell never sees it.
-			_, _ = s.stdin.Write([]byte{0})
+			_ = s.writeStdin([]byte{0})
 		}
 	}
 }
@@ -244,15 +254,13 @@ func (m *SSHManager) SendCommand(sessionID, command string) (string, error) {
 		return "", err
 	}
 
-	if _, err := session.stdin.Write([]byte(command + "\n")); err != nil {
+	if err := session.writeStdin([]byte(command + "\n")); err != nil {
 		return "", fmt.Errorf("failed to send command: %w", err)
 	}
 
 	time.Sleep(commandDelay)
 
-	session.mu.RLock()
 	screen := renderScreen(session.emulator)
-	session.mu.RUnlock()
 
 	return screen, nil
 }
@@ -270,9 +278,7 @@ func (m *SSHManager) GetScreen(sessionID string) (string, error) {
 
 	time.Sleep(screenDelay)
 
-	session.mu.RLock()
 	screen := renderScreen(session.emulator)
-	session.mu.RUnlock()
 
 	return screen, nil
 }

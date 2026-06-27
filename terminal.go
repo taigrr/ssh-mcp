@@ -9,7 +9,7 @@ import (
 
 // renderScreen returns the full visible screen of the emulator as a string,
 // preserving ANSI styling and using a newline between rows.
-func renderScreen(emulator *vt.Emulator) string {
+func renderScreen(emulator *vt.SafeEmulator) string {
 	rows := make([]string, emulator.Height())
 	for y := range emulator.Height() {
 		rows[y] = renderLine(emulator, y)
@@ -21,7 +21,7 @@ func renderScreen(emulator *vt.Emulator) string {
 // renderLine renders a single row of the emulator, emitting style sequences
 // only when the style changes between cells. The rendered line ends with an
 // ANSI reset to avoid bleeding styles into the next row.
-func renderLine(emulator *vt.Emulator, y int) string {
+func renderLine(emulator *vt.SafeEmulator, y int) string {
 	var builder strings.Builder
 	var lastStyle uv.Style
 

@@ -86,7 +86,7 @@ func TestIsAllowed(t *testing.T) {
 }
 
 func TestRenderScreenEmpty(t *testing.T) {
-	emulator := vt.NewEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(termWidth, termHeight)
 	screen := renderScreen(emulator)
 
 	lines := strings.Split(screen, "\n")
@@ -96,7 +96,7 @@ func TestRenderScreenEmpty(t *testing.T) {
 }
 
 func TestRenderScreenWithContent(t *testing.T) {
-	emulator := vt.NewEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(termWidth, termHeight)
 
 	if _, err := emulator.Write([]byte("Hello, World!")); err != nil {
 		t.Fatalf("failed to write to emulator: %v", err)
@@ -109,7 +109,7 @@ func TestRenderScreenWithContent(t *testing.T) {
 }
 
 func TestRenderScreenMultipleLines(t *testing.T) {
-	emulator := vt.NewEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(termWidth, termHeight)
 
 	if _, err := emulator.Write([]byte("Line 1\r\nLine 2\r\nLine 3")); err != nil {
 		t.Fatalf("failed to write to emulator: %v", err)
@@ -131,13 +131,13 @@ func TestRenderScreenMultipleLines(t *testing.T) {
 }
 
 func TestRenderLineEmpty(t *testing.T) {
-	emulator := vt.NewEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(termWidth, termHeight)
 	line := renderLine(emulator, 0)
 	_ = line
 }
 
 func TestRenderLineWithContent(t *testing.T) {
-	emulator := vt.NewEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(termWidth, termHeight)
 
 	if _, err := emulator.Write([]byte("test content")); err != nil {
 		t.Fatalf("failed to write to emulator: %v", err)
@@ -212,7 +212,7 @@ func TestRenderScreenDimensions(t *testing.T) {
 		{80, 24},
 		{1, 1},
 	} {
-		emulator := vt.NewEmulator(tc.width, tc.height)
+		emulator := vt.NewSafeEmulator(tc.width, tc.height)
 		screen := renderScreen(emulator)
 		lines := strings.Split(screen, "\n")
 		if len(lines) != tc.height {
@@ -223,7 +223,7 @@ func TestRenderScreenDimensions(t *testing.T) {
 }
 
 func TestRenderScreenANSIContent(t *testing.T) {
-	emulator := vt.NewEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(termWidth, termHeight)
 
 	if _, err := emulator.Write([]byte("\x1b[31mred text\x1b[0m")); err != nil {
 		t.Fatalf("failed to write ANSI content: %v", err)
@@ -236,7 +236,7 @@ func TestRenderScreenANSIContent(t *testing.T) {
 }
 
 func TestRenderScreenSpecialCharacters(t *testing.T) {
-	emulator := vt.NewEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(termWidth, termHeight)
 
 	if _, err := emulator.Write([]byte("$PATH=/usr/bin:/usr/local/bin")); err != nil {
 		t.Fatalf("failed to write special chars: %v", err)
