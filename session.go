@@ -146,6 +146,7 @@ func (m *SSHManager) Connect(alias string) (string, error) {
 	}
 
 	go sshSession.pumpOutput(stdout)
+	go sshSession.pumpInput()
 	go sshSession.runKeepalive(ctx)
 
 	m.mu.Lock()
@@ -169,6 +170,26 @@ func (s *SSHSession) pumpOutput(stdout io.Reader) {
 		s.mu.Lock()
 		_, _ = s.emulator.Write(buf[:n])
 		s.mu.Unlock()
+	}
+}
+
+// pumpInput forwards the emulator's terminal query responses (Primary DA,
+// device-status/cursor-position reports, XTGETTCAP, etc.) back to the remote
+// shell's stdin. A plain login shell never needs these, but full-screen apps
+// like tmux block on them during startup and mis-detect the terminal when no
+// reply arrives, leaving the session blank or garbled.
+func (s *SSHSession) pumpInput() {
+	buf := make([]byte, readBufferSize)
+	for s.isActive() {
+		n, err := s.emulator.Read(buf)
+		if err != nil {
+			return
+		}
+		if n > 0 {
+			if _, err := s.stdin.Write(buf[:n]); err != nil {
+				return
+			}
+		}
 	}
 }
 
