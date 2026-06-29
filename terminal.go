@@ -1,11 +1,33 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/vt"
 )
+
+// ansiSequence matches the CSI/OSC/escape sequences a shell and its programs
+// emit (colors, cursor moves, etc.). ssh_exec strips these so the captured
+// output is plain text the model can read without noise.
+var ansiSequence = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]`)
+
+// stripANSI removes ANSI escape sequences and stray control bytes from s,
+// normalizing carriage returns so the result reads as plain UTF-8 lines. It
+// preserves newlines and tabs.
+func stripANSI(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	// Re-allow tab and newline which the control-byte class above would eat.
+	out := ansiSequence.ReplaceAllStringFunc(s, func(m string) string {
+		if m == "\t" || m == "\n" {
+			return m
+		}
+		return ""
+	})
+	return out
+}
 
 // renderScreen returns the full visible screen of the emulator as a string,
 // preserving ANSI styling and using a newline between rows.

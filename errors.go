@@ -20,6 +20,18 @@ var (
 	// ErrNoAuthMethods indicates no authentication methods could be assembled
 	// for the requested host (no agent, no keys, no password).
 	ErrNoAuthMethods = errors.New("no authentication methods available")
+
+	// ErrExecInFlight indicates an ssh_exec call was attempted while another
+	// is already running in the same session's shell.
+	ErrExecInFlight = errors.New("another command is already executing in this session")
+
+	// ErrMultilineExec indicates ssh_exec was given a command containing a
+	// newline. Such commands must use ssh_send_command instead.
+	ErrMultilineExec = errors.New("ssh_exec does not support multiline commands; use ssh_send_command")
+
+	// ErrReservedMarker indicates the command text contained the reserved
+	// internal sentinel prefix used to detect command completion.
+	ErrReservedMarker = errors.New("command contains a reserved internal marker prefix")
 )
 
 // TransferError describes a failure during a recursive SFTP transfer. It

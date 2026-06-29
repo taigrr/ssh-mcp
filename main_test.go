@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/vt"
 )
@@ -86,17 +87,17 @@ func TestIsAllowed(t *testing.T) {
 }
 
 func TestRenderScreenEmpty(t *testing.T) {
-	emulator := vt.NewSafeEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(defaultTermWidth, defaultTermHeight)
 	screen := renderScreen(emulator)
 
 	lines := strings.Split(screen, "\n")
-	if len(lines) != termHeight {
-		t.Fatalf("expected %d lines, got %d", termHeight, len(lines))
+	if len(lines) != defaultTermHeight {
+		t.Fatalf("expected %d lines, got %d", defaultTermHeight, len(lines))
 	}
 }
 
 func TestRenderScreenWithContent(t *testing.T) {
-	emulator := vt.NewSafeEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(defaultTermWidth, defaultTermHeight)
 
 	if _, err := emulator.Write([]byte("Hello, World!")); err != nil {
 		t.Fatalf("failed to write to emulator: %v", err)
@@ -109,7 +110,7 @@ func TestRenderScreenWithContent(t *testing.T) {
 }
 
 func TestRenderScreenMultipleLines(t *testing.T) {
-	emulator := vt.NewSafeEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(defaultTermWidth, defaultTermHeight)
 
 	if _, err := emulator.Write([]byte("Line 1\r\nLine 2\r\nLine 3")); err != nil {
 		t.Fatalf("failed to write to emulator: %v", err)
@@ -118,8 +119,8 @@ func TestRenderScreenMultipleLines(t *testing.T) {
 	screen := renderScreen(emulator)
 	lines := strings.Split(screen, "\n")
 
-	if len(lines) != termHeight {
-		t.Fatalf("expected %d lines, got %d", termHeight, len(lines))
+	if len(lines) != defaultTermHeight {
+		t.Fatalf("expected %d lines, got %d", defaultTermHeight, len(lines))
 	}
 
 	foundLine1 := strings.Contains(screen, "Line 1")
@@ -131,13 +132,13 @@ func TestRenderScreenMultipleLines(t *testing.T) {
 }
 
 func TestRenderLineEmpty(t *testing.T) {
-	emulator := vt.NewSafeEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(defaultTermWidth, defaultTermHeight)
 	line := renderLine(emulator, 0)
 	_ = line
 }
 
 func TestRenderLineWithContent(t *testing.T) {
-	emulator := vt.NewSafeEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(defaultTermWidth, defaultTermHeight)
 
 	if _, err := emulator.Write([]byte("test content")); err != nil {
 		t.Fatalf("failed to write to emulator: %v", err)
@@ -177,7 +178,7 @@ func TestListSessionsWithEntries(t *testing.T) {
 
 	found := make(map[string]bool)
 	for _, s := range sessions {
-		found[s] = true
+		found[s.ID] = true
 	}
 	if !found["session-1"] || !found["session-2"] {
 		t.Fatalf("expected both sessions, got: %v", sessions)
@@ -223,7 +224,7 @@ func TestRenderScreenDimensions(t *testing.T) {
 }
 
 func TestRenderScreenANSIContent(t *testing.T) {
-	emulator := vt.NewSafeEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(defaultTermWidth, defaultTermHeight)
 
 	if _, err := emulator.Write([]byte("\x1b[31mred text\x1b[0m")); err != nil {
 		t.Fatalf("failed to write ANSI content: %v", err)
@@ -236,7 +237,7 @@ func TestRenderScreenANSIContent(t *testing.T) {
 }
 
 func TestRenderScreenSpecialCharacters(t *testing.T) {
-	emulator := vt.NewSafeEmulator(termWidth, termHeight)
+	emulator := vt.NewSafeEmulator(defaultTermWidth, defaultTermHeight)
 
 	if _, err := emulator.Write([]byte("$PATH=/usr/bin:/usr/local/bin")); err != nil {
 		t.Fatalf("failed to write special chars: %v", err)
@@ -324,5 +325,133 @@ func TestResolveHostConfig(t *testing.T) {
 	}
 	if hc.Port != defaultPort {
 		t.Fatalf("expected port %s, got: %s", defaultPort, hc.Port)
+	}
+}
+
+func TestClampTermSize(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		inW, inH     int
+		wantW, wantH int
+	}{
+		{"zero falls back to default", 0, 0, defaultTermWidth, defaultTermHeight},
+		{"negative falls back to default", -1, -5, defaultTermWidth, defaultTermHeight},
+		{"below min is clamped up", 1, 1, minTermWidth, minTermHeight},
+		{"above max is clamped down", 100000, 100000, maxTermWidth, maxTermHeight},
+		{"in range passes through", 120, 40, 120, 40},
+		{"mixed: w in range, h below min", 80, 1, 80, minTermHeight},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotW, gotH := clampTermSize(tc.inW, tc.inH)
+			if gotW != tc.wantW || gotH != tc.wantH {
+				t.Errorf("clampTermSize(%d,%d) = %dx%d, want %dx%d",
+					tc.inW, tc.inH, gotW, gotH, tc.wantW, tc.wantH)
+			}
+		})
+	}
+}
+
+func TestResizeSessionNotFound(t *testing.T) {
+	mgr := NewSSHManager(nil)
+	_, _, err := mgr.Resize("nonexistent", 120, 40)
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("expected ErrSessionNotFound, got: %v", err)
+	}
+}
+
+func TestResizeInactiveSession(t *testing.T) {
+	mgr := NewSSHManager(nil)
+	mgr.mu.Lock()
+	mgr.sessions["s"] = &SSHSession{active: false}
+	mgr.mu.Unlock()
+
+	_, _, err := mgr.Resize("s", 120, 40)
+	if !errors.Is(err, ErrSessionInactive) {
+		t.Fatalf("expected ErrSessionInactive, got: %v", err)
+	}
+}
+
+func TestDefaultTermSizeIsLargerThan80x24(t *testing.T) {
+	// Regression guard: we deliberately moved off the historical 80x24 to
+	// give AI agents a reasonable window. If someone shrinks this back to
+	// 80x24 they should think twice and re-read consts.go.
+	if defaultTermWidth <= 80 {
+		t.Errorf("defaultTermWidth (%d) should be > 80 to avoid agent truncation pain", defaultTermWidth)
+	}
+	if defaultTermHeight <= 24 {
+		t.Errorf("defaultTermHeight (%d) should be > 24 to reduce scrollback churn", defaultTermHeight)
+	}
+}
+
+func TestListSessionsReportsActiveState(t *testing.T) {
+	mgr := NewSSHManager(nil)
+	mgr.mu.Lock()
+	mgr.sessions["alive"] = &SSHSession{id: "alive", manager: mgr, active: true, width: 200, height: 50}
+	mgr.sessions["dead"] = &SSHSession{id: "dead", manager: mgr, active: false, width: 200, height: 50}
+	mgr.mu.Unlock()
+
+	sessions := mgr.ListSessions()
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(sessions))
+	}
+
+	got := make(map[string]bool)
+	for _, s := range sessions {
+		got[s.ID] = s.Active
+	}
+	if !got["alive"] {
+		t.Errorf("expected 'alive' to be reported Active=true, got false")
+	}
+	if got["dead"] {
+		t.Errorf("expected 'dead' to be reported Active=false, got true")
+	}
+}
+
+func TestMarkInactiveReapsSession(t *testing.T) {
+	// When a background goroutine marks a session inactive (e.g. EOF on
+	// stdout or keepalive timeout) the entry should disappear from the
+	// manager so a follow-up ListSessions doesn't lie to the client.
+	mgr := NewSSHManager(nil)
+
+	s := &SSHSession{id: "reaped", manager: mgr, active: true}
+	mgr.mu.Lock()
+	mgr.sessions["reaped"] = s
+	mgr.mu.Unlock()
+
+	s.markInactive()
+
+	// reapSession runs in a goroutine; poll briefly for the deletion.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		mgr.mu.RLock()
+		_, exists := mgr.sessions["reaped"]
+		mgr.mu.RUnlock()
+		if !exists {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("expected reaped session to be removed from manager")
+}
+
+func TestMarkInactiveIdempotent(t *testing.T) {
+	// pumpOutput and runKeepalive can both observe the disconnect and call
+	// markInactive concurrently; the second call must be a no-op rather
+	// than racing or double-deleting.
+	mgr := NewSSHManager(nil)
+	s := &SSHSession{id: "x", manager: mgr, active: true}
+	mgr.mu.Lock()
+	mgr.sessions["x"] = s
+	mgr.mu.Unlock()
+
+	s.markInactive()
+	s.markInactive() // must not panic or double-reap
+
+	time.Sleep(50 * time.Millisecond)
+	mgr.mu.RLock()
+	_, exists := mgr.sessions["x"]
+	mgr.mu.RUnlock()
+	if exists {
+		t.Fatal("expected session to be reaped exactly once")
 	}
 }

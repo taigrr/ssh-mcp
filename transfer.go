@@ -234,3 +234,103 @@ func downloadDir(client *sftp.Client, remoteRoot, localRoot string) (int, error)
 
 	return count, nil
 }
+
+// ReadFile reads a remote file over SFTP and returns its content as a string,
+// without going through the interactive shell or the emulator. offset is the
+// starting byte; length caps how many bytes are returned (0 means "up to
+// maxRemoteReadBytes"). The result is truncated to maxRemoteReadBytes
+// regardless, and the truncated flag reports whether more data remains beyond
+// what was returned.
+func (m *SSHManager) ReadFile(sessionID, remotePath string, offset, length int64) (content string, truncated bool, err error) {
+	m.mu.RLock()
+	session, exists := m.sessions[sessionID]
+	m.mu.RUnlock()
+
+	if !exists {
+		return "", false, fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
+	}
+	if !session.isActive() {
+		return "", false, fmt.Errorf("%w: %s", ErrSessionInactive, sessionID)
+	}
+
+	client, err := newSFTPClient(session.client)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to start sftp: %w", err)
+	}
+	defer client.Close()
+
+	f, err := client.Open(remotePath)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to open remote file: %w", err)
+	}
+	defer f.Close()
+
+	if offset > 0 {
+		if _, err := f.Seek(offset, io.SeekStart); err != nil {
+			return "", false, fmt.Errorf("failed to seek remote file: %w", err)
+		}
+	}
+
+	limit := int64(maxRemoteReadBytes)
+	if length > 0 && length < limit {
+		limit = length
+	}
+
+	// Read one extra byte to detect whether more data remains.
+	buf := make([]byte, limit+1)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return "", false, fmt.Errorf("failed to read remote file: %w", err)
+	}
+
+	if int64(n) > limit {
+		return string(buf[:limit]), true, nil
+	}
+	// Only a complete read (from the start, not truncated) satisfies the
+	// read-before-edit guard, so a partial slice can't unlock a blind edit.
+	if offset == 0 {
+		session.recordRead(remotePath)
+	}
+	return string(buf[:n]), false, nil
+}
+
+// WriteFile writes content to a remote file over SFTP, creating parent
+// directories as needed and truncating any existing file. It does not touch
+// the interactive shell or emulator.
+func (m *SSHManager) WriteFile(sessionID, remotePath, content string) (string, error) {
+	m.mu.RLock()
+	session, exists := m.sessions[sessionID]
+	m.mu.RUnlock()
+
+	if !exists {
+		return "", fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
+	}
+	if !session.isActive() {
+		return "", fmt.Errorf("%w: %s", ErrSessionInactive, sessionID)
+	}
+
+	client, err := newSFTPClient(session.client)
+	if err != nil {
+		return "", fmt.Errorf("failed to start sftp: %w", err)
+	}
+	defer client.Close()
+
+	if dir := filepath.ToSlash(filepath.Dir(remotePath)); dir != "." && dir != "" {
+		if err := client.MkdirAll(dir); err != nil {
+			return "", fmt.Errorf("failed to create remote directory: %w", err)
+		}
+	}
+
+	f, err := client.Create(remotePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create remote file: %w", err)
+	}
+	defer f.Close()
+
+	n, err := f.Write([]byte(content))
+	if err != nil {
+		return "", fmt.Errorf("failed to write remote file: %w", err)
+	}
+
+	return fmt.Sprintf("Wrote %d bytes to %s", n, remotePath), nil
+}
