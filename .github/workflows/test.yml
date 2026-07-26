@@ -3,6 +3,8 @@ on:
   push:
     branches: [master]
   pull_request:
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -11,6 +13,27 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go test -race ./...
+      - name: Check formatting
+        run: |
+          go install golang.org/x/tools/cmd/goimports@v0.48.0
+          diff=$(goimports -l .)
+          if [ -n "$diff" ]; then
+            echo "The following files are not formatted:"
+            echo "$diff"
+            exit 1
+          fi
+      - name: go mod tidy check
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
       - run: go vet ./...
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          staticcheck ./...
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          govulncheck ./...
       - run: go build ./...
+      - run: go test -race ./...

@@ -34,7 +34,6 @@ const (
 	readBufferSize    = 4096
 	keepaliveRequest  = "keepalive@openssh.com"
 	ansiReset         = "\x1b[0m"
-	version           = "2.3.0"
 
 	// execMarkerPrefix is the fixed prefix of the begin/end-of-command
 	// sentinels that ssh_exec injects into the shell stream. A per-call

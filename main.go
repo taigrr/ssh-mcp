@@ -27,7 +27,7 @@ func run(allowedHosts []string) error {
 
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "ssh-mcp",
-		Version: version,
+		Version: Version,
 	}, nil)
 
 	registerTools(server, mgr)
@@ -109,7 +109,7 @@ func main() {
 
 	cmd.Flags().StringVar(&allowedHostsFlag, "allowed-hosts", "", "Comma-separated list of allowed SSH host aliases")
 
-	if err := fang.Execute(context.Background(), cmd); err != nil {
+	if err := fang.Execute(context.Background(), cmd, fang.WithVersion(Version)); err != nil {
 		os.Exit(1)
 	}
 }
