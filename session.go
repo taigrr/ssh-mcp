@@ -536,12 +536,9 @@ func (m *SSHManager) ClearScreen(sessionID string) error {
 // GetScreen returns the current rendered screen for the session after a
 // short settle delay.
 func (m *SSHManager) GetScreen(sessionID string) (string, error) {
-	m.mu.RLock()
-	session, exists := m.sessions[sessionID]
-	m.mu.RUnlock()
-
-	if !exists {
-		return "", fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
+	session, err := m.requireActive(sessionID)
+	if err != nil {
+		return "", err
 	}
 
 	time.Sleep(screenDelay)
