@@ -20,15 +20,9 @@ func newSFTPClient(client *ssh.Client) (*sftp.Client, error) {
 // Upload copies a local path (file or directory) to a remote destination on
 // the given session's host. Directories are copied recursively.
 func (m *SSHManager) Upload(sessionID, localPath, remotePath string) (string, error) {
-	m.mu.RLock()
-	session, exists := m.sessions[sessionID]
-	m.mu.RUnlock()
-
-	if !exists {
-		return "", fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
-	}
-	if !session.active {
-		return "", fmt.Errorf("%w: %s", ErrSessionInactive, sessionID)
+	session, err := m.requireActive(sessionID)
+	if err != nil {
+		return "", err
 	}
 
 	client, err := newSFTPClient(session.client)
@@ -59,15 +53,9 @@ func (m *SSHManager) Upload(sessionID, localPath, remotePath string) (string, er
 // Download copies a remote path (file or directory) to a local destination
 // from the given session's host. Directories are copied recursively.
 func (m *SSHManager) Download(sessionID, remotePath, localPath string) (string, error) {
-	m.mu.RLock()
-	session, exists := m.sessions[sessionID]
-	m.mu.RUnlock()
-
-	if !exists {
-		return "", fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
-	}
-	if !session.active {
-		return "", fmt.Errorf("%w: %s", ErrSessionInactive, sessionID)
+	session, err := m.requireActive(sessionID)
+	if err != nil {
+		return "", err
 	}
 
 	client, err := newSFTPClient(session.client)
@@ -242,15 +230,9 @@ func downloadDir(client *sftp.Client, remoteRoot, localRoot string) (int, error)
 // regardless, and the truncated flag reports whether more data remains beyond
 // what was returned.
 func (m *SSHManager) ReadFile(sessionID, remotePath string, offset, length int64) (content string, truncated bool, err error) {
-	m.mu.RLock()
-	session, exists := m.sessions[sessionID]
-	m.mu.RUnlock()
-
-	if !exists {
-		return "", false, fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
-	}
-	if !session.isActive() {
-		return "", false, fmt.Errorf("%w: %s", ErrSessionInactive, sessionID)
+	session, err := m.requireActive(sessionID)
+	if err != nil {
+		return "", false, err
 	}
 
 	client, err := newSFTPClient(session.client)
@@ -298,15 +280,9 @@ func (m *SSHManager) ReadFile(sessionID, remotePath string, offset, length int64
 // directories as needed and truncating any existing file. It does not touch
 // the interactive shell or emulator.
 func (m *SSHManager) WriteFile(sessionID, remotePath, content string) (string, error) {
-	m.mu.RLock()
-	session, exists := m.sessions[sessionID]
-	m.mu.RUnlock()
-
-	if !exists {
-		return "", fmt.Errorf("%w: %s", ErrSessionNotFound, sessionID)
-	}
-	if !session.isActive() {
-		return "", fmt.Errorf("%w: %s", ErrSessionInactive, sessionID)
+	session, err := m.requireActive(sessionID)
+	if err != nil {
+		return "", err
 	}
 
 	client, err := newSFTPClient(session.client)

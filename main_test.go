@@ -56,6 +56,19 @@ func TestGetScreenSessionNotFound(t *testing.T) {
 	}
 }
 
+func TestGetScreenInactiveSession(t *testing.T) {
+	mgr := NewSSHManager(nil)
+
+	mgr.mu.Lock()
+	mgr.sessions["test-session"] = &SSHSession{active: false}
+	mgr.mu.Unlock()
+
+	_, err := mgr.GetScreen("test-session")
+	if !errors.Is(err, ErrSessionInactive) {
+		t.Fatalf("expected ErrSessionInactive, got: %v", err)
+	}
+}
+
 func TestConnectNotAllowed(t *testing.T) {
 	mgr := NewSSHManager([]string{"server1"})
 	_, err := mgr.Connect("server2")
