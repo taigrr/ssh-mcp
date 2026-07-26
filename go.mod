@@ -1,6 +1,6 @@
 module github.com/taigrr/ssh-mcp
 
-go 1.26.2
+go 1.26.5
 
 require (
 	charm.land/fang/v2 v2.0.1
@@ -10,7 +10,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/pkg/sftp v1.13.10
 	github.com/spf13/cobra v1.10.2
-	github.com/taigrr/jety v0.4.1
+	github.com/taigrr/jety v0.4.2
 	golang.org/x/crypto v0.50.0
 )
 
