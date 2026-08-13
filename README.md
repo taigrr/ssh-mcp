@@ -38,7 +38,7 @@ go install github.com/taigrr/ssh-mcp@latest
 
 ## Requirements
 
-- Go >= **1.24** (for installation)
+- Go >= **1.26.5** (for installation)
 - `~/.ssh/config` entries for your hosts
 - One of:
   - `ssh-agent` or `gpg-agent` running (recommended)
