@@ -1,11 +1,11 @@
 module github.com/taigrr/ssh-mcp
 
-go 1.26.5
+go 1.27.0
 
 require (
 	charm.land/fang/v2 v2.0.1
 	github.com/charmbracelet/ultraviolet v0.0.0-20260812204455-68fa937c71be
-	github.com/charmbracelet/x/vt v0.0.0-20260816001655-68d539dca504
+	github.com/charmbracelet/x/vt v0.0.0-20260830003929-9f48cc723c1c
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/pkg/sftp v1.13.11
@@ -19,7 +19,7 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/x/ansi v0.11.8 // indirect
-	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260816001655-68d539dca504 // indirect
+	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260830003929-9f48cc723c1c // indirect
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
