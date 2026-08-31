@@ -12,8 +12,6 @@ github.com/charmbracelet/ultraviolet v0.0.0-20260812204455-68fa937c71be h1:qEvkJ
 github.com/charmbracelet/ultraviolet v0.0.0-20260812204455-68fa937c71be/go.mod h1:nAw0d9PhFp1qdzi2xhQU5YOu5sVpDIHWlaW2Uz/bCro=
 github.com/charmbracelet/x/ansi v0.11.8 h1:JMFwp0CgDC2+jcOB162HH5k7I3FVbgFSMMYg7dSPBQQ=
 github.com/charmbracelet/x/ansi v0.11.8/go.mod h1:ZNN+3mXny/516oTQPLMPIBeSINvNJJQ8uQXDgbeJxY0=
-github.com/charmbracelet/x/exp/charmtone v0.0.0-20260816001655-68d539dca504 h1:vXmc9iOQFML+9lTrD8Bzvysnpl5I0MjGqPe9B4j6AHM=
-github.com/charmbracelet/x/exp/charmtone v0.0.0-20260816001655-68d539dca504/go.mod h1:nsExn0DGyX0lh9LwLHTn2Gg+hafdzfSXnC+QmEJTZFY=
 github.com/charmbracelet/x/exp/charmtone v0.0.0-20260830003929-9f48cc723c1c h1:E69qrHmdmcvcJWnYp6IjdUYLe14r317QGI+M/VyeeGM=
 github.com/charmbracelet/x/exp/charmtone v0.0.0-20260830003929-9f48cc723c1c/go.mod h1:nsExn0DGyX0lh9LwLHTn2Gg+hafdzfSXnC+QmEJTZFY=
 github.com/charmbracelet/x/exp/golden v0.0.0-20250806222409-83e3a29d542f h1:pk6gmGpCE7F3FcjaOEKYriCvpmIN4+6OS/RD0vm4uIA=
@@ -24,8 +22,6 @@ github.com/charmbracelet/x/term v0.2.2 h1:xVRT/S2ZcKdhhOuSP4t5cLi5o+JxklsoEObBSg
 github.com/charmbracelet/x/term v0.2.2/go.mod h1:kF8CY5RddLWrsgVwpw4kAa6TESp6EB5y3uxGLeCqzAI=
 github.com/charmbracelet/x/termios v0.1.1 h1:o3Q2bT8eqzGnGPOYheoYS8eEleT5ZVNYNy8JawjaNZY=
 github.com/charmbracelet/x/termios v0.1.1/go.mod h1:rB7fnv1TgOPOyyKRJ9o+AsTU/vK5WHJ2ivHeut/Pcwo=
-github.com/charmbracelet/x/vt v0.0.0-20260816001655-68d539dca504 h1:6IimldGknk2hgS1DwDm5qzCJM0QPb6nK4Seyk5XOsp4=
-github.com/charmbracelet/x/vt v0.0.0-20260816001655-68d539dca504/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
 github.com/charmbracelet/x/vt v0.0.0-20260830003929-9f48cc723c1c h1:xnmCqk94HD2zr8jy2GALGr7cLr0e4taFbYYXErmXglU=
 github.com/charmbracelet/x/vt v0.0.0-20260830003929-9f48cc723c1c/go.mod h1:u1LOIABor9JqY54oZdktK3TCRrgzP6tzHrDYx1nd3wY=
 github.com/charmbracelet/x/windows v0.2.2 h1:IofanmuvaxnKHuV04sC0eBy/smG6kIKrWG2/jYn2GuM=
