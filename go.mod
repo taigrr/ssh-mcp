@@ -11,7 +11,7 @@ require (
 	github.com/pkg/sftp v1.13.11
 	github.com/spf13/cobra v1.10.2
 	github.com/taigrr/jety v0.4.3
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 )
 
 require (
