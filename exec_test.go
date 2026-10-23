@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -198,7 +199,7 @@ func TestExecMarkerWrapContainsCommand(t *testing.T) {
 		t.Fatalf("wrapped command should end with a newline to execute: %q", got)
 	}
 	// $? must be expanded after the user's command, not the begin printf.
-	if !strings.Contains(got, "ls -la; printf") {
+	if !strings.Contains(got, "eval 'ls -la'; printf") {
 		t.Fatalf("exit code capture must follow the user command: %q", got)
 	}
 }
@@ -273,5 +274,52 @@ func TestExecConcurrentRejected(t *testing.T) {
 	// when calls do overlap.
 	if inFlight < 0 {
 		t.Fatal("unreachable")
+	}
+}
+
+func TestExecWrapperShellSyntax(t *testing.T) {
+	for _, shell := range []string{"sh", "bash"} {
+		t.Run(shell, func(t *testing.T) {
+			shellPath, err := exec.LookPath(shell)
+			if err != nil {
+				t.Skipf("shell unavailable: %v", err)
+			}
+			for _, tc := range []struct {
+				name, command, output string
+				code                  int
+			}{
+				{"comment", "printf hello # trailing comment", "hello", 0},
+				{"semicolon", "printf hello;", "hello", 0},
+				{"quoted", "printf '%s' \"it's quoted\"", "it's quoted", 0},
+				{"nonzero comment", "false # trailing comment", "", 1},
+				{"persistent state", "export SSHMCP_TEST_VALUE=kept;", "", 0},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					markers := newExecMarkers()
+					script := markers.wrap(tc.command)
+					if tc.name == "persistent state" {
+						script += "test \"$SSHMCP_TEST_VALUE\" = kept\n"
+					}
+					output, err := exec.Command(shellPath, "-c", script).CombinedOutput()
+					if err != nil {
+						t.Fatalf("wrapper failed: %v: %s", err, output)
+					}
+					watcher := newExecWatcher(markers)
+					watcher.write(output)
+					select {
+					case code := <-watcher.done:
+						if code != tc.code {
+							t.Fatalf("exit code = %d, want %d", code, tc.code)
+						}
+					default:
+						t.Fatalf("completion marker missing: %q", output)
+					}
+					raw, ok := watcher.output()
+					if !ok || strings.Trim(string(raw), "\n") != tc.output {
+						t.Fatalf("output = %q (%v), want %q", raw, ok, tc.output)
+					}
+				})
+			}
+		})
 	}
 }
