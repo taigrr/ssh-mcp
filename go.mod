@@ -7,10 +7,10 @@ toolchain go1.27.3
 require (
 	charm.land/fang/v2 v2.0.1
 	github.com/charmbracelet/ultraviolet v0.0.0-20260812204455-68fa937c71be
-	github.com/charmbracelet/x/vt v0.0.0-20260830003929-9f48cc723c1c
+	github.com/charmbracelet/x/vt v0.1.0
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/pkg/sftp v1.13.11
+	github.com/pkg/sftp v1.13.12
 	github.com/spf13/cobra v1.10.2
 	github.com/taigrr/jety v0.4.3
 	golang.org/x/crypto v0.58.0

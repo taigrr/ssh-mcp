@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,11 +38,15 @@ func newExecMarkers() execMarkers {
 // begin marker is printed on its own line *before* the command runs and the
 // end marker *after*, carrying the command's exit status via $?.
 //
+// The command is single-quoted and evaluated in the existing shell so trailing
+// comments and separators cannot consume or break the completion printf. eval
+// preserves shell state (unlike running the command in a child shell).
+//
 // Crucially $? is expanded as an argument to the trailing printf, so it
 // reflects the user's command, not the begin-marker printf.
 func (m execMarkers) wrap(command string) string {
 	return fmt.Sprintf("printf '%%s\\n' %s; %s; printf '\\n%%s:%%d\\n' %s $?\n",
-		m.begin, command, m.end)
+		m.begin, "eval '"+strings.ReplaceAll(command, "'", "'\"'\"'")+"'", m.end)
 }
 
 // execWatcher taps the raw stdout byte stream of a session while an ssh_exec
