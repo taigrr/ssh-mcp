@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 
@@ -46,7 +45,7 @@ func buildAuthMethods(hc HostConfig) []ssh.AuthMethod {
 	var methods []ssh.AuthMethod
 
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
-		if conn, err := net.Dial("unix", sock); err == nil {
+		if conn, err := dialAuthSock(sock); err == nil {
 			methods = append(methods, ssh.PublicKeysCallback(agent.NewClient(conn).Signers))
 		}
 	}
