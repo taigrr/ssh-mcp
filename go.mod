@@ -6,6 +6,7 @@ toolchain go1.27.3
 
 require (
 	charm.land/fang/v2 v2.0.1
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/charmbracelet/ultraviolet v0.0.0-20260812204455-68fa937c71be
 	github.com/charmbracelet/x/vt v0.1.0
 	github.com/kevinburke/ssh_config v1.6.0
